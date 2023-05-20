@@ -1,4 +1,3 @@
-import SwiftUI
 import AVFoundation
 import Combine
 
@@ -13,7 +12,7 @@ class BreathObsever: ObservableObject {
   
   @Published var breathingUnit = 0
   
-  init(threshold: Int, resourceUrl: URL) {
+  init(threshold: Int = -55) {
     self.threshold = threshold
     do {
       try setupAudioRecorder()
