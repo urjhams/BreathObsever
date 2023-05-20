@@ -12,13 +12,9 @@ class BreathObsever: ObservableObject {
   
   @Published var breathingUnit = 0
   
-  init(threshold: Int = -55) {
+  init(threshold: Int = -55) throws {
     self.threshold = threshold
-    do {
-      try setupAudioRecorder()
-    } catch {
-      print(error.localizedDescription)
-    }
+    try setupAudioRecorder()
   }
   
   func setupAudioRecorder() throws {
