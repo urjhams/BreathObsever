@@ -11,6 +11,8 @@ class BreathObsever: ObservableObject {
   
   @Published var isBreathing = false
   
+  @Published var breathingUnit = 0
+  
   init(threshold: Int, resourceUrl: URL) {
     self.threshold = threshold
     do {
@@ -63,10 +65,10 @@ class BreathObsever: ObservableObject {
     recorder?.record()
   }
   
-  @discardableResult
-  public func trackAudioSignal() -> Int {
+  ///  Record audio signal and return the represent value as decibel
+  public func trackAudioSignal() {
     guard let recorder else {
-      return 0
+      return
     }
     recorder.updateMeters()
     
@@ -84,7 +86,7 @@ class BreathObsever: ObservableObject {
     // TODO: change the threshold
     isBreathing = (combinedPower > threshold)
     print("combine: \(combinedPower), breathing: \(isBreathing)")
-    return combinedPower
+    breathingUnit = combinedPower
   }
   
   /// The peakPower(forChannel:) function in AVFoundation returns the peak power of an
