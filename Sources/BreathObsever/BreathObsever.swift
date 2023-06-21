@@ -2,6 +2,11 @@ import AVFoundation
 import Combine
 
 public class BreathObsever: ObservableObject {
+  
+  public enum ObserverError: Error {
+    case recorderNotAllocated
+    case notRecording
+  }
 
   let session = AVAudioSession.sharedInstance()
   
@@ -28,7 +33,10 @@ extension BreathObsever {
   public func setupAudioRecorder() throws {
     // record if from phone's mic, playAndRecord if in AirPods
     //try AVInstance.setCategory(.record)
-    try session.setCategory(.playAndRecord, options: [.allowBluetooth, .allowBluetoothA2DP])
+    try session.setCategory(
+      .record,
+      options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
+    )
     
     guard let availableInputs = session.availableInputs else {
       return
@@ -36,7 +44,7 @@ extension BreathObsever {
     
     let availableBluetoothLE = availableInputs.first(where: { description in
       // bluetooth hand free profile, BLE - like AirPods
-      return [.bluetoothLE, .bluetoothHFP].contains(description.portType)
+      return [.bluetoothLE, .bluetoothHFP, .airPlay].contains(description.portType)
     })
     
     if availableBluetoothLE != nil  {
@@ -72,9 +80,13 @@ extension BreathObsever {
   
   ///  Record audio signal and return the represent value as decibel
   @discardableResult
-  public func trackAudioSignal() -> Int {
-    guard let recorder, recorder.isRecording else {
-      return -1
+  public func trackAudioSignal() throws -> Int {
+    guard let recorder else {
+      throw ObserverError.recorderNotAllocated
+    }
+    
+    guard recorder.isRecording else {
+      throw ObserverError.notRecording
     }
     
     recorder.updateMeters()
@@ -102,7 +114,7 @@ extension BreathObsever {
     // assign the breathing indicator
     isBreathing = (combinedPower > threshold)
     
-    print("combine: \(combinedPower), breathing: \(isBreathing)")
+    //print("🙆🏻🙆🏻🙆🏻 combine: \(combinedPower), breathing: \(isBreathing)")
     
     // assign the breathing unit publisher
     breathingUnit = combinedPower
