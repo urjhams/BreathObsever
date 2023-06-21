@@ -12,6 +12,7 @@ class BreathObsever: ObservableObject {
   
   @Published var breathingUnit = 0
   
+  // TODO: temporary use default threshold as -55
   init(threshold: Int = -55) throws {
     self.threshold = threshold
     try setupAudioRecorder()
@@ -79,8 +80,18 @@ class BreathObsever: ObservableObject {
     let combinedPower = average + peak
     
     // TODO: change the threshold
+    // TODO: do we need some kind of validation to set threshold?
+    // like tell the user to breath normal, silent, and heavy
+    // then we get the threshold
+    // May be also use voice recogniztion to decide is user speaking or not
+    // so it is an exception
+    
+    // assign the breathing indicator
     isBreathing = (combinedPower > threshold)
+    
     print("combine: \(combinedPower), breathing: \(isBreathing)")
+    
+    // assign the breathing unit publisher
     breathingUnit = combinedPower
   }
   
