@@ -1,39 +1,45 @@
 import AVFoundation
 import Combine
 
-class BreathObsever: ObservableObject {
+public class BreathObsever: ObservableObject {
 
   let session = AVAudioSession.sharedInstance()
+  
   let threshold: Int
   
-  var recorder: AVAudioRecorder?
+  public var recorder: AVAudioRecorder?
   
+  // TODO: maybe we remove this?
   @Published var isBreathing = false
   
-  @Published var breathingUnit = 0
+  @Published public var breathingUnit = 0
   
   // TODO: temporary use default threshold as -55
-  init(threshold: Int = -55) throws {
+  public init(threshold: Int = -55) {
     self.threshold = threshold
-    try setupAudioRecorder()
+    
+    // setup audio recorder, if failed, the recorder will be nil
+    try? setupAudioRecorder()
   }
-  
-  func setupAudioRecorder() throws {
+}
+
+// MARK: - setup
+extension BreathObsever {
+  public func setupAudioRecorder() throws {
     // record if from phone's mic, playAndRecord if in AirPods
     //try AVInstance.setCategory(.record)
-    try session.setCategory(
-      .playAndRecord,
-      options: [.allowBluetooth, .allowBluetoothA2DP]
-    )
+    try session.setCategory(.playAndRecord, options: [.allowBluetooth, .allowBluetoothA2DP])
     
     guard let availableInputs = session.availableInputs else {
       return
     }
     
-    if let _ = availableInputs.first(where: { description in
-      // bluetooth hand free profile - like AirPods
-      return description.portType == .bluetoothLE
-    }) {
+    let availableBluetoothLE = availableInputs.first(where: { description in
+      // bluetooth hand free profile, BLE - like AirPods
+      return [.bluetoothLE, .bluetoothHFP].contains(description.portType)
+    })
+    
+    if availableBluetoothLE != nil  {
       try audioRecordWithAirPod()
     }
     
@@ -58,24 +64,31 @@ class BreathObsever: ObservableObject {
     try recorder = AVAudioRecorder(url: url, settings: settings)
     recorder?.prepareToRecord()
     recorder?.isMeteringEnabled = true
-    recorder?.record()
   }
+}
+
+// MARK: - track audio
+extension BreathObsever {
   
   ///  Record audio signal and return the represent value as decibel
-  public func trackAudioSignal() {
-    guard let recorder else {
-      return
+  @discardableResult
+  public func trackAudioSignal() -> Int {
+    guard let recorder, recorder.isRecording else {
+      return -1
     }
+    
     recorder.updateMeters()
     
     // Uses a weighted average of the average power and
     // peak power for the time period.
     
-    // range from -160 dBFS to 0 dBFS
-    let average = convertAudioSignal(recorder.averagePower(forChannel: 0))
+    let channel = 0
     
     // range from -160 dBFS to 0 dBFS
-    let peak = convertAudioSignal(recorder.peakPower(forChannel: 0))
+    let average = convertAudioSignal(recorder.averagePower(forChannel: channel))
+    
+    // range from -160 dBFS to 0 dBFS
+    let peak = convertAudioSignal(recorder.peakPower(forChannel: channel))
     
     let combinedPower = average + peak
     
@@ -93,6 +106,8 @@ class BreathObsever: ObservableObject {
     
     // assign the breathing unit publisher
     breathingUnit = combinedPower
+    
+    return combinedPower
   }
   
   /// The peakPower(forChannel:) function in AVFoundation returns the peak power of an
@@ -103,5 +118,14 @@ class BreathObsever: ObservableObject {
     let linearValue = pow(10, value / 20)
     return Int(linearValue * 1000)
   }
-  
+}
+
+// MARK: - toggle
+extension BreathObsever {
+  public func startTrackAudioSignal() {
+    recorder?.record()
+  }
+  public func stopTrackAudioSignal() {
+    recorder?.stop()
+  }
 }
