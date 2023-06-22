@@ -10,6 +10,8 @@ public class BreathObsever: ObservableObject {
 
   let session = AVAudioSession.sharedInstance()
   
+  /// A flag that indicate if the setupAudioRecorder() has run successfully
+  public var successfullySetupRecord = false
   
   public var recorder: AVAudioRecorder?
   
@@ -24,7 +26,10 @@ public class BreathObsever: ObservableObject {
 
 // MARK: - setup
 extension BreathObsever {
-  public func setupAudioRecorder() throws {
+  private func setupAudioRecorder() throws {
+    defer {
+      successfullySetupRecord = true
+    }
     // record if from phone's mic, playAndRecord if in AirPods
     //try AVInstance.setCategory(.record)
     try session.setCategory(
