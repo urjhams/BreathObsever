@@ -14,9 +14,6 @@ public class BreathObsever: ObservableObject {
   
   public var recorder: AVAudioRecorder?
   
-  // TODO: maybe we remove this?
-  @Published var isBreathing = false
-  
   @Published public var breathingUnit = 0
   
   // TODO: temporary use default threshold as -55
@@ -97,29 +94,9 @@ extension BreathObsever {
     let channel = 0
     
     // range from -160 dBFS to 0 dBFS
-    let average = convertAudioSignal(recorder.averagePower(forChannel: channel))
+    breathingUnit = convertAudioSignal(recorder.averagePower(forChannel: channel))
     
-    // range from -160 dBFS to 0 dBFS
-    let peak = convertAudioSignal(recorder.peakPower(forChannel: channel))
-    
-    let combinedPower = average + peak
-    
-    // TODO: change the threshold
-    // TODO: do we need some kind of validation to set threshold?
-    // like tell the user to breath normal, silent, and heavy
-    // then we get the threshold
-    // May be also use voice recogniztion to decide is user speaking or not
-    // so it is an exception
-    
-    // assign the breathing indicator
-    isBreathing = (combinedPower > threshold)
-    
-    //print("🙆🏻🙆🏻🙆🏻 combine: \(combinedPower), breathing: \(isBreathing)")
-    
-    // assign the breathing unit publisher
-    breathingUnit = combinedPower
-    
-    return combinedPower
+    return breathingUnit
   }
   
   /// The peakPower(forChannel:) function in AVFoundation returns the peak power of an
