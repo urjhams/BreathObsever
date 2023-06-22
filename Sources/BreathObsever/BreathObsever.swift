@@ -10,15 +10,12 @@ public class BreathObsever: ObservableObject {
 
   let session = AVAudioSession.sharedInstance()
   
-  let threshold: Int
   
   public var recorder: AVAudioRecorder?
   
   @Published public var breathingUnit = 0
   
-  // TODO: temporary use default threshold as -55
-  public init(threshold: Int = -55) {
-    self.threshold = threshold
+  public init() {
     
     // setup audio recorder, if failed, the recorder will be nil
     try? setupAudioRecorder()
