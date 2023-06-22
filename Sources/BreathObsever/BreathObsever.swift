@@ -10,26 +10,55 @@ public class BreathObsever: ObservableObject {
 
   let session = AVAudioSession.sharedInstance()
   
+  /// timer
+  let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+  
+  var cancellables = Set<AnyCancellable>()
+  
+  /// A flag that indicate that currentlly recording
+  @Published public var isTracking = false {
+    didSet {
+      isTracking ? startTrackAudioSignal() : stopTrackAudioSignal()
+    }
+  }
+  
   /// A flag that indicate if the setupAudioRecorder() has run successfully
-  public var successfullySetupRecord = false
+  @Published public var successfullySetupRecord = false
   
   public var recorder: AVAudioRecorder?
   
-  @Published public var breathingUnit = 0
+  @Published public var digitalPowerLevel: Double = 0
+  @Published public var convertedPowerLevel: Int = 0
   
   public init() {
     
     // setup audio recorder, if failed, the recorder will be nil
     try? setupAudioRecorder()
+    
+    setupTimer()
   }
 }
 
 // MARK: - setup
 extension BreathObsever {
+  
+  private func setupTimer() {
+    timer
+      .sink { [unowned self] _ in
+        guard self.isTracking else {
+          return
+        }
+        try? self.trackAudioSignal()
+      }
+      .store(in: &cancellables)
+  }
+  
   private func setupAudioRecorder() throws {
+    
     defer {
       successfullySetupRecord = true
     }
+    
     // record if from phone's mic, playAndRecord if in AirPods
     //try AVInstance.setCategory(.record)
     try session.setCategory(
@@ -43,16 +72,12 @@ extension BreathObsever {
     
     let availableBluetoothLE = availableInputs.first(where: { description in
       // bluetooth hand free profile, BLE - like AirPods
-      return [.bluetoothLE, .bluetoothHFP, .airPlay].contains(description.portType)
+      [.bluetoothLE, .bluetoothHFP, .airPlay].contains(description.portType)
     })
     
     if availableBluetoothLE != nil  {
       try audioRecordWithAirPod()
     }
-    
-    // note: in the future if we use the 3rd party headphones,
-    // use switch input.portType instead
-    // and find out which one is `.bluetoothLE`
   }
   
   private func audioRecordWithAirPod() throws {
@@ -78,8 +103,7 @@ extension BreathObsever {
 extension BreathObsever {
   
   ///  Record audio signal and return the represent value as decibel
-  @discardableResult
-  public func trackAudioSignal() throws -> Int {
+  public func trackAudioSignal() throws {
     guard let recorder else {
       throw ObserverError.recorderNotAllocated
     }
@@ -96,18 +120,19 @@ extension BreathObsever {
     let channel = 0
     
     // range from -160 dBFS to 0 dBFS
-    breathingUnit = convertAudioSignal(recorder.averagePower(forChannel: channel))
+    let power = recorder.averagePower(forChannel: channel)
+        
+    digitalPowerLevel = Double(power)
     
-    return breathingUnit
+    convertedPowerLevel = convertAudioSignal(power)
   }
   
   /// The peakPower(forChannel:) function in AVFoundation returns the peak power of an
   /// audio signal in decibels (dB), which is not a 0-1000 scale.
-  /// To convert the result to a 0-100 scale, you can first convert the decibel value to a linear
+  /// To convert the result to a 0-1000 scale, you can first convert the decibel value to a linear
   /// scale and then map it to the desired range.
   private func convertAudioSignal(_ value: Float) -> Int {
-    let linearValue = pow(10, value / 20)
-    return Int(linearValue * 1000)
+    Int(pow(10, value / 20) * 1000)
   }
 }
 
