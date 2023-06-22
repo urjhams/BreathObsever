@@ -16,19 +16,24 @@ public class BreathObsever: ObservableObject {
   var cancellables = Set<AnyCancellable>()
   
   /// A flag that indicate that currentlly recording
-  @Published public var isTracking = false {
+  @Published
+  public var isTracking = false {
     didSet {
       isTracking ? startTrackAudioSignal() : stopTrackAudioSignal()
     }
   }
   
   /// A flag that indicate if the setupAudioRecorder() has run successfully
-  @Published public var successfullySetupRecord = false
+  @Published
+  public var successfullySetupRecord = false
   
   public var recorder: AVAudioRecorder?
   
-  @Published public var digitalPowerLevel: Double = 0
-  @Published public var convertedPowerLevel: Int = 0
+  @Published
+  public var digitalPowerLevel: Double = 0
+  
+  @Published
+  public var convertedPowerLevel: Int = 0
   
   public init() {
     
