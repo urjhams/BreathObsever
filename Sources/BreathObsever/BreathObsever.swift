@@ -35,6 +35,9 @@ public class BreathObsever: ObservableObject {
   @Published
   public var convertedPowerLevel: Int = 0
   
+  // TODO: now we need a model to store the powerlevel array's peaks (up and down)
+  // then use them to indicate cognitive load level
+  
   public init() {
     
     // setup audio recorder, if failed, the recorder will be nil
