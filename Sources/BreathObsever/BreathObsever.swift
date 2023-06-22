@@ -38,6 +38,9 @@ public class BreathObsever: ObservableObject {
   // TODO: now we need a model to store the powerlevel array's peaks (up and down)
   // then use them to indicate cognitive load level
   
+  // TODO: the model will have a timer(?) to track the density of the peaks in an amount of time
+  // -> the breathing pattern is fast or slow -> cognitive load/ calmness level(?)
+  
   public init() {
     
     // setup audio recorder, if failed, the recorder will be nil
