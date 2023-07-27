@@ -15,12 +15,12 @@ public class BreathObsever: ObservableObject {
   ///
   /// We should use `measurement` mode to use only the primary microphone (The airpod pro has 2 mics, one primary for voice),
   /// one for noise cancellation which will record the environment sounds so it could affect the accuration of output data we desired.
-  var mode: AVAudioSession.Mode = .measurement
+  private var mode: AVAudioSession.Mode = .measurement
   
   /// timer
-  let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+  private let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
   
-  var cancellables = Set<AnyCancellable>()
+  private var cancellables = Set<AnyCancellable>()
   
   /// A flag that indicate that currentlly recording
   @Published
@@ -34,7 +34,7 @@ public class BreathObsever: ObservableObject {
   @Published
   public var successfullySetupRecord = false
   
-  public var recorder: AVAudioRecorder?
+  private var recorder: AVAudioRecorder?
   
   @Published
   public var digitalPowerLevel: Double = 0
