@@ -10,6 +10,13 @@ public class BreathObsever: ObservableObject {
 
   let session = AVAudioSession.sharedInstance()
   
+  //TODO: might need to switch between .default and .measurement to see if also use the environment mic, how it is
+  /// The mode category.
+  ///
+  /// We should use `measurement` mode to use only the primary microphone (The airpod pro has 2 mics, one primary for voice),
+  /// one for noise cancellation which will record the environment sounds so it could affect the accuration of output data we desired.
+  var mode: AVAudioSession.Mode = .measurement
+  
   /// timer
   let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
   
@@ -74,6 +81,7 @@ extension BreathObsever {
     //try AVInstance.setCategory(.record)
     try session.setCategory(
       .record,
+      mode: mode,
       options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
     )
     
@@ -105,8 +113,12 @@ extension BreathObsever {
     settings[AVEncoderAudioQualityKey] = AVAudioQuality.max.rawValue
     
     try recorder = AVAudioRecorder(url: url, settings: settings)
-    recorder?.prepareToRecord()
-    recorder?.isMeteringEnabled = true
+    
+    guard let recorder else {
+      throw ObserverError.recorderNotAllocated
+    }
+    recorder.prepareToRecord()
+    recorder.isMeteringEnabled = true
   }
 }
 
@@ -127,23 +139,28 @@ extension BreathObsever {
     
     // Uses a weighted average of the average power and
     // peak power for the time period.
-    
+        
     let channel = 0
     
     // range from -160 dBFS to 0 dBFS
-    let power = recorder.averagePower(forChannel: channel)
-        
+    // Using peakPower over averagePower in this case
+    // because we monitor the real-time recorded audio,
+    // so we can capture any sudden loud spikes or peaks.
+    let power = recorder.peakPower(forChannel: channel)
+    
     digitalPowerLevel = Double(power)
     
     convertedPowerLevel = convertAudioSignal(power)
   }
   
   /// The peakPower(forChannel:) function in AVFoundation returns the peak power of an
-  /// audio signal in decibels (dB), which is not a 0-1000 scale.
-  /// To convert the result to a 0-1000 scale, you can first convert the decibel value to a linear
+  /// audio signal in decibels (dB), which is not a 0-100000 scale.
+  /// To convert the result to a 0-100000 scale, you can first convert the decibel value to a linear
   /// scale and then map it to the desired range.
+  ///
+  /// Use 100000 scale for a more accurate power with low noise, since we working with breathing sounds
   private func convertAudioSignal(_ value: Float) -> Int {
-    Int(pow(10, value / 20) * 1000)
+    Int(pow(10, value / 20) * 100000)
   }
 }
 
