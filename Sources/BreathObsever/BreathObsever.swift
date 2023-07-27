@@ -6,6 +6,7 @@ public class BreathObsever: ObservableObject {
   public enum ObserverError: Error {
     case recorderNotAllocated
     case notRecording
+    case noTimerAllocated
   }
 
   let session = AVAudioSession.sharedInstance()
@@ -18,7 +19,7 @@ public class BreathObsever: ObservableObject {
   private var mode: AVAudioSession.Mode = .measurement
   
   /// timer
-  private let timer = Timer.publish(every: 0.05, on: .main, in: .common).autoconnect()
+  var timer: AnyPublisher<Date, Never>?
   
   private var cancellables = Set<AnyCancellable>()
   
@@ -29,6 +30,8 @@ public class BreathObsever: ObservableObject {
       isTracking ? startTrackAudioSignal() : stopTrackAudioSignal()
     }
   }
+  
+  public var hasTimer = false
   
   /// A flag that indicate if the setupAudioRecorder() has run successfully
   @Published
@@ -49,18 +52,27 @@ public class BreathObsever: ObservableObject {
   // -> the breathing pattern is fast or slow -> cognitive load/ calmness level(?)
   
   public init() {
-    
+        
     // setup audio recorder, if failed, the recorder will be nil
     try? setupAudioRecorder()
     
-    setupTimer()
+    try? setupTimer()
   }
 }
 
 // MARK: - setup
 extension BreathObsever {
   
-  private func setupTimer() {
+  public func assignTimer(timer: AnyPublisher<Date, Never>) throws {
+    self.timer = timer
+    hasTimer = true
+    try setupTimer()
+  }
+  
+  private func setupTimer() throws {
+    guard let timer else {
+      throw ObserverError.noTimerAllocated
+    }
     timer
       .sink { [unowned self] _ in
         guard self.isTracking else {
@@ -143,10 +155,7 @@ extension BreathObsever {
     let channel = 0
     
     // range from -160 dBFS to 0 dBFS
-    // Using peakPower over averagePower in this case
-    // because we monitor the real-time recorded audio,
-    // so we can capture any sudden loud spikes or peaks.
-    let power = recorder.peakPower(forChannel: channel)
+    let power = recorder.averagePower(forChannel: channel)
     
     digitalPowerLevel = Double(power)
     
