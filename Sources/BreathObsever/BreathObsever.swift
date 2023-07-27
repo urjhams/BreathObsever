@@ -9,14 +9,7 @@ public class BreathObsever: ObservableObject {
     case noTimerAllocated
   }
 
-  let session = AVAudioSession.sharedInstance()
-  
-  //TODO: might need to switch between .default and .measurement to see if also use the environment mic, how it is
-  /// The mode category.
-  ///
-  /// We should use `measurement` mode to use only the primary microphone (The airpod pro has 2 mics, one primary for voice),
-  /// one for noise cancellation which will record the environment sounds so it could affect the accuration of output data we desired.
-  private var mode: AVAudioSession.Mode = .measurement
+  let session = AVAudioSession()
   
   /// timer
   var timer: AnyPublisher<Date, Never>?
@@ -31,6 +24,8 @@ public class BreathObsever: ObservableObject {
     }
   }
   
+  /// A flag that indicate if the timer is successfully created
+  @Published
   public var hasTimer = false
   
   /// A flag that indicate if the setupAudioRecorder() has run successfully
@@ -56,7 +51,6 @@ public class BreathObsever: ObservableObject {
     // setup audio recorder, if failed, the recorder will be nil
     try? setupAudioRecorder()
     
-    try? setupTimer()
   }
 }
 
@@ -65,8 +59,8 @@ extension BreathObsever {
   
   public func assignTimer(timer: AnyPublisher<Date, Never>) throws {
     self.timer = timer
-    hasTimer = true
     try setupTimer()
+    hasTimer = true
   }
   
   private func setupTimer() throws {
@@ -93,8 +87,14 @@ extension BreathObsever {
     //try AVInstance.setCategory(.record)
     try session.setCategory(
       .record,
-      mode: mode,
-      options: [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
+      mode: .measurement,
+      options: [
+        // Allow the use of Bluetooth devices like AirPods
+        // (DO NOT USE .allowBluetooth, which forces audio to 16kHz
+        .allowBluetooth,
+        .allowBluetoothA2DP,
+        .allowAirPlay
+      ]
     )
     
     guard let availableInputs = session.availableInputs else {
@@ -103,7 +103,7 @@ extension BreathObsever {
     
     let availableBluetoothLE = availableInputs.first(where: { description in
       // bluetooth hand free profile, BLE - like AirPods
-      [.bluetoothLE, .bluetoothHFP, .airPlay].contains(description.portType)
+      [.bluetoothLE, .bluetoothHFP, .airPlay, .bluetoothA2DP].contains(description.portType)
     })
     
     if availableBluetoothLE != nil  {
@@ -122,7 +122,7 @@ extension BreathObsever {
     settings[AVSampleRateKey] = 192000.0
     settings[AVFormatIDKey] = Int(kAudioFormatAppleLossless)
     settings[AVNumberOfChannelsKey] = 1
-    settings[AVEncoderAudioQualityKey] = AVAudioQuality.max.rawValue
+    settings[AVEncoderAudioQualityKey] = AVAudioQuality.high.rawValue
     
     try recorder = AVAudioRecorder(url: url, settings: settings)
     
@@ -160,6 +160,8 @@ extension BreathObsever {
     digitalPowerLevel = Double(power)
     
     convertedPowerLevel = convertAudioSignal(power)
+    
+    print("🙆🏻🙆🏻🙆🏻 \(convertedPowerLevel)")
   }
   
   /// The peakPower(forChannel:) function in AVFoundation returns the peak power of an
