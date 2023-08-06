@@ -49,11 +49,7 @@ public class BreathObsever: ObservableObject {
   public init() {
     
     // setup audio recorder, if failed, the recorder will be nil
-    do {
-      try setupAudioRecorder()
-    } catch {
-      print("🙆🏻🙆🏻🙆🏻 error: \(error)")
-    }
+    // try? setupAudioRecorder()
   }
 }
 
@@ -80,7 +76,7 @@ extension BreathObsever {
       .store(in: &cancellables)
   }
   
-  private func setupAudioRecorder() throws {
+  public func setupAudioRecorder() throws {
     
     defer {
       successfullySetupRecord = true
@@ -89,46 +85,44 @@ extension BreathObsever {
     // record if from phone's mic, playAndRecord if in AirPods
     //try AVInstance.setCategory(.record)
     try session.setCategory(
-      .record,
+      .playAndRecord,             // should use playAndRecord instead just Record
       mode: .measurement,
       options: [
         // Allow the use of Bluetooth devices
         .allowBluetooth,
-//        .allowBluetoothA2DP,
-//        .allowAirPlay
+        .allowBluetoothA2DP,
+        .allowAirPlay
       ]
     )
     
     guard let availableInputs = session.availableInputs else {
       return
     }
-    
-    print("🤨 \(availableInputs.map(\.portType))")
-    
+        
     let availableBluetoothLE = availableInputs.first { description in
       // bluetooth hand free profile, BLE - like AirPods
       [.bluetoothLE, .bluetoothHFP, .airPlay, .bluetoothA2DP].contains(description.portType)
     }
     
     if let _ = availableBluetoothLE  {
-      try audioRecordWithAirBuds()
+      try sessionAndRecorderConfig()
     }
   }
   
-  private func audioRecordWithAirBuds() throws {
+  private func sessionAndRecorderConfig() throws {
     try session.setActive(true, options: .notifyOthersOnDeactivation)
     
     let filePaths = NSTemporaryDirectory()
     let url = URL(fileURLWithPath: filePaths).appendingPathComponent("tempRecord")
     
-    var settings: [String: Any] = [
+    let settings: [String: Any] = [
       // 192 kHz is the highest commonly used sample rate
       AVSampleRateKey:          192000.0,
       AVEncoderBitRateKey:      192000,
       AVFormatIDKey:            Int(kAudioFormatAppleLossless),
       AVNumberOfChannelsKey:    1,
       AVLinearPCMBitDepthKey:   32,
-      AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue,
+      AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
     ]
     
     try recorder = AVAudioRecorder(url: url, settings: settings)
@@ -156,9 +150,6 @@ extension BreathObsever {
     
     recorder.updateMeters()
     
-    // Uses a weighted average of the average power and
-    // peak power for the time period.
-        
     let channel = 0
     
     // range from -160 dBFS to 0 dBFS
@@ -168,7 +159,6 @@ extension BreathObsever {
     
     convertedPowerLevel = convertAudioSignal(power)
     
-    print("🙆🏻🙆🏻🙆🏻 \(convertedPowerLevel)")
   }
   
   /// The peakPower(forChannel:) function in AVFoundation returns the peak power of an
