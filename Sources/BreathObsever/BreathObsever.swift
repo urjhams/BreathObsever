@@ -47,10 +47,13 @@ public class BreathObsever: ObservableObject {
   // -> the breathing pattern is fast or slow -> cognitive load/ calmness level(?)
   
   public init() {
-        
-    // setup audio recorder, if failed, the recorder will be nil
-    try? setupAudioRecorder()
     
+    // setup audio recorder, if failed, the recorder will be nil
+    do {
+      try setupAudioRecorder()
+    } catch {
+      print("🙆🏻🙆🏻🙆🏻 error: \(error)")
+    }
   }
 }
 
@@ -89,11 +92,10 @@ extension BreathObsever {
       .record,
       mode: .measurement,
       options: [
-        // Allow the use of Bluetooth devices like AirPods
-        // (DO NOT USE .allowBluetooth, which forces audio to 16kHz
+        // Allow the use of Bluetooth devices
         .allowBluetooth,
-        .allowBluetoothA2DP,
-        .allowAirPlay
+//        .allowBluetoothA2DP,
+//        .allowAirPlay
       ]
     )
     
@@ -101,28 +103,33 @@ extension BreathObsever {
       return
     }
     
-    let availableBluetoothLE = availableInputs.first(where: { description in
+    print("🤨 \(availableInputs.map(\.portType))")
+    
+    let availableBluetoothLE = availableInputs.first { description in
       // bluetooth hand free profile, BLE - like AirPods
       [.bluetoothLE, .bluetoothHFP, .airPlay, .bluetoothA2DP].contains(description.portType)
-    })
+    }
     
-    if availableBluetoothLE != nil  {
-      try audioRecordWithAirPod()
+    if let _ = availableBluetoothLE  {
+      try audioRecordWithAirBuds()
     }
   }
   
-  private func audioRecordWithAirPod() throws {
+  private func audioRecordWithAirBuds() throws {
     try session.setActive(true, options: .notifyOthersOnDeactivation)
     
     let filePaths = NSTemporaryDirectory()
     let url = URL(fileURLWithPath: filePaths).appendingPathComponent("tempRecord")
     
-    var settings = [String: Any]()
-    // 192 kHz is the highest commonly used sample rate
-    settings[AVSampleRateKey] = 192000.0
-    settings[AVFormatIDKey] = Int(kAudioFormatAppleLossless)
-    settings[AVNumberOfChannelsKey] = 1
-    settings[AVEncoderAudioQualityKey] = AVAudioQuality.high.rawValue
+    var settings: [String: Any] = [
+      // 192 kHz is the highest commonly used sample rate
+      AVSampleRateKey:          192000.0,
+      AVEncoderBitRateKey:      192000,
+      AVFormatIDKey:            Int(kAudioFormatAppleLossless),
+      AVNumberOfChannelsKey:    1,
+      AVLinearPCMBitDepthKey:   32,
+      AVEncoderAudioQualityKey: AVAudioQuality.max.rawValue,
+    ]
     
     try recorder = AVAudioRecorder(url: url, settings: settings)
     
