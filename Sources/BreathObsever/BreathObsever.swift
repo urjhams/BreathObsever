@@ -209,6 +209,11 @@ extension BreathObsever {
 // MARK: - FFT Analyze
 extension BreathObsever {
   
+  private func setupFFT() {
+    let length = vDSP_Length(1024)
+    fftSetup = vDSP_DFT_zop_CreateSetup(nil, length, .FORWARD)
+  }
+  
   private func normalizeData(_ data: [Float]) -> [Float] {
     var normalizedData = data
     let dataSize = vDSP_Length(data.count)
@@ -239,7 +244,7 @@ extension BreathObsever {
     vDSP_DFT_Execute(fftSetup, &realIn, &imagIn, &realOut, &imagOut)
     
     var complex: DSPSplitComplex?
-    //package the result inside a complex vector representation used in the vDSP framework
+    //wrap the result inside a complex vector representation used in the vDSP framework
     realOut.withUnsafeMutableBufferPointer { real in
       imagOut.withUnsafeMutableBufferPointer { imaginary in
         guard
@@ -260,28 +265,22 @@ extension BreathObsever {
     var magnitudes = [Float](repeating: 0, count: data.count)
     vDSP_zvabs(&complex, 1, &magnitudes, 1, vDSP_Length(data.count))
     
-    // For example, you could find local maxima in the magnitudes array and calculate distances between them
     // Find local maxima in the magnitudes array
     var peaks: [(index: Int, magnitude: Float)] = []
-    for i in 1..<(magnitudes.count - 1) {
-      if magnitudes[i] > magnitudes[i - 1] && magnitudes[i] > magnitudes[i + 1] {
-        peaks.append((index: i, magnitude: magnitudes[i]))
+    for index in 1..<(magnitudes.count - 1) {
+      if magnitudes[index] > magnitudes[index - 1] && magnitudes[index] > magnitudes[index + 1] {
+        peaks.append((index: index, magnitude: magnitudes[index]))
       }
     }
     
     // Calculate distances between consecutive peaks
     var peakDistances: [Int] = []
-    for i in 1..<peaks.count {
-      let distance = peaks[i].index - peaks[i - 1].index
+    for index in 1..<peaks.count {
+      let distance = peaks[index].index - peaks[index - 1].index
       peakDistances.append(distance)
     }
     
     print("Detected Peaks: \(peaks)")
     print("Peak Distances: \(peakDistances)")
-  }
-  
-  private func setupFFT() {
-    let length = vDSP_Length(1024)
-    fftSetup = vDSP_DFT_zop_CreateSetup(nil, length, .FORWARD)
   }
 }
