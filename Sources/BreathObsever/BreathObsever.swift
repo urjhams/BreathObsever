@@ -61,6 +61,13 @@ public class BreathObsever: ObservableObject {
     
     setupFFT()
   }
+  
+  deinit {
+    // free memory of the fftSetup as it is used in low level memory.
+    if let fftSetup {
+      vDSP_DFT_DestroySetup(fftSetup)
+    }
+  }
 }
 
 // MARK: - setup
