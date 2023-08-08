@@ -1,5 +1,6 @@
 import AVFoundation
 import Combine
+import Accelerate
 
 public class BreathObsever: ObservableObject {
   
@@ -10,6 +11,13 @@ public class BreathObsever: ObservableObject {
   }
 
   let session = AVAudioSession()
+  
+  private var recorder: AVAudioRecorder?
+  
+  var audioBuffer: [Float] = []
+  var normalizedData: [Float] = []
+  
+  var fftSetup: vDSP_DFT_Setup?
   
   /// time of one update cycle
   let cycle: TimeInterval
@@ -35,8 +43,6 @@ public class BreathObsever: ObservableObject {
   @Published
   public var successfullySetupRecord = false
   
-  private var recorder: AVAudioRecorder?
-  
   @Published
   public var digitalPowerLevel: Double = 0
   
@@ -49,19 +55,18 @@ public class BreathObsever: ObservableObject {
   // TODO: the model will have a timer(?) to track the density of the peaks in an amount of time
   // -> the breathing pattern is fast or slow -> cognitive load/ calmness level(?)
   
-  var audioBuffer: [Float] = []
-  let sampleRate = 44100
+ 
+  let sampleRate = 44100.0
   lazy var bufferSize = Int(10 * (1 / cycle)) // 10 seconds
-//  let fftBufferSize = 1024  // size for FFT analysis
-  
-//  let threshold: Float = 0.02
   
   var analyzeTimer: Timer?
   
   public init(cycle: TimeInterval) {
     self.cycle = cycle
-    // setup audio recorder, if failed, the recorder will be nil
-    // try? setupAudioRecorder()
+    
+    try? setupAudioRecorder()
+    
+    setupFFT()
   }
 }
 
@@ -72,6 +77,10 @@ extension BreathObsever {
     self.timer = timer
     try setupTimer()
     hasTimer = true
+  }
+  
+  public func deallocateTimer() {
+    cancellables.removeAll()
   }
   
   private func setupTimer() throws {
@@ -159,12 +168,20 @@ extension BreathObsever {
     }
     
     recorder.updateMeters()
-    
-    let channel = 0
-    
+        
     // range from -160 dBFS to 0 dBFS
-    let power = recorder.averagePower(forChannel: channel)
+    let power = recorder.averagePower(forChannel: 0)
     
+    // add value to buffer
+    audioBuffer.append(power)
+    
+    if audioBuffer.count >= Int(sampleRate * cycle) { // `cycle` seconds at `sampeRate` Hz
+      normalizedData = normalizeData(audioBuffer)
+      analyzePeaks(normalizedData)
+      audioBuffer.removeFirst(441)  // remove the oldest 0.01 seconds of Data at sample rate 44100
+    }
+    
+    // -- convert to 0-10000 scale and show in real time graph
     // Convert dB value to linear scale
     digitalPowerLevel = Double(power)
     
@@ -172,9 +189,6 @@ extension BreathObsever {
     
     // this converted power level is used for real time data
     convertedPowerLevel = convtered
-    
-    // append the data to the buffer to normalizing
-    updateAudioBuffer(with: [Float(convtered)])
     
   }
   
@@ -214,9 +228,84 @@ extension BreathObsever {
   }
 }
 
-import Accelerate
-
+// MARK: - FFT Analyze
 extension BreathObsever {
+  
+  private func normalizeData(_ data: [Float]) -> [Float] {
+    var normalizedData = data
+    let dataSize = vDSP_Length(data.count)
+    
+    normalizedData.withUnsafeMutableBufferPointer { buffer in
+      vDSP_vsmul(buffer.baseAddress!, 1, [2.0 / Float(dataSize)], buffer.baseAddress!, 1, dataSize)
+    }
+    
+    return normalizedData
+  }
+  
+  func analyzePeaks(_ data: [Float]) {
+    guard let fftSetup else {
+      return
+    }
+    
+    var realIn = [Float](repeating: 0, count: data.count)
+    var imagIn = [Float](repeating: 0, count: data.count)
+    var realOut = [Float](repeating: 0, count: data.count)
+    var imagOut = [Float](repeating: 0, count: data.count)
+    
+    //fill in real input part with audio samples
+    for i in 0..<data.count {
+      realIn[i] = data[i]
+    }
+    
+    // perform fft
+    vDSP_DFT_Execute(fftSetup, &realIn, &imagIn, &realOut, &imagOut)
+    
+    var complex: DSPSplitComplex?
+    //package the result inside a complex vector representation used in the vDSP framework
+    realOut.withUnsafeMutableBufferPointer { real in
+      imagOut.withUnsafeMutableBufferPointer { imaginary in
+        guard
+          let realOutAddress = real.baseAddress,
+          let imagOutAddress = imaginary.baseAddress
+        else {
+          return
+        }
+        complex = .init(realp: realOutAddress, imagp: imagOutAddress)
+      }
+    }
+    
+    guard var complex else {
+      return
+    }
+    
+    // create and store the result in magnitudes array
+    var magnitudes = [Float](repeating: 0, count: data.count)
+    vDSP_zvabs(&complex, 1, &magnitudes, 1, vDSP_Length(data.count))
+    
+    // For example, you could find local maxima in the magnitudes array and calculate distances between them
+    // Find local maxima in the magnitudes array
+    var peaks: [(index: Int, magnitude: Float)] = []
+    for i in 1..<(magnitudes.count - 1) {
+      if magnitudes[i] > magnitudes[i - 1] && magnitudes[i] > magnitudes[i + 1] {
+        peaks.append((index: i, magnitude: magnitudes[i]))
+      }
+    }
+    
+    // Calculate distances between consecutive peaks
+    var peakDistances: [Int] = []
+    for i in 1..<peaks.count {
+      let distance = peaks[i].index - peaks[i - 1].index
+      peakDistances.append(distance)
+    }
+    
+    print("Detected Peaks: \(peaks)")
+    print("Peak Distances: \(peakDistances)")
+  }
+  
+  private func setupFFT() {
+    let length = vDSP_Length(1024)
+    fftSetup = vDSP_DFT_zop_CreateSetup(nil, length, .FORWARD)
+  }
   
   func performFFTAnalysis() {
     guard audioBuffer.count >= bufferSize else {
