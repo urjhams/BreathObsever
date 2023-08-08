@@ -49,18 +49,11 @@ public class BreathObsever: ObservableObject {
   @Published
   public var convertedPowerLevel: Int = 0
   
-  // TODO: now we need a model to store the powerlevel array's peaks (up and down)
+  // TODO: need a model to store the powerlevel array's peaks (up and down)
   // then use them to indicate cognitive load level
   
-  // TODO: the model will have a timer(?) to track the density of the peaks in an amount of time
-  // -> the breathing pattern is fast or slow -> cognitive load/ calmness level(?)
-  
- 
   let sampleRate = 44100.0
-  lazy var bufferSize = Int(10 * (1 / cycle)) // 10 seconds
-  
-  var analyzeTimer: Timer?
-  
+    
   public init(cycle: TimeInterval) {
     self.cycle = cycle
     
@@ -192,13 +185,6 @@ extension BreathObsever {
     
   }
   
-  private func updateAudioBuffer(with data: [Float]) {
-    audioBuffer.append(contentsOf: data)
-    if audioBuffer.count > bufferSize {
-      audioBuffer.removeFirst(audioBuffer.count - bufferSize)
-    }
-  }
-  
   /// The peakPower(forChannel:) function in AVFoundation returns the peak power of an
   /// audio signal in decibels (dB), which is not a 0-100000 scale.
   /// To convert the result to a 0-100000 scale, you can first convert the decibel value to a linear
@@ -214,17 +200,9 @@ extension BreathObsever {
 extension BreathObsever {
   public func startTrackAudioSignal() {
     recorder?.record()
-    analyzeTimer = .scheduledTimer(withTimeInterval: 1.0, repeats: true, block: { [weak self] _ in
-      guard self?.isTracking ?? false else {
-        return
-      }
-      self?.performFFTAnalysis()
-    })
   }
   public func stopTrackAudioSignal() {
     recorder?.stop()
-    analyzeTimer?.invalidate()
-    analyzeTimer = nil
   }
 }
 
@@ -306,50 +284,4 @@ extension BreathObsever {
     let length = vDSP_Length(1024)
     fftSetup = vDSP_DFT_zop_CreateSetup(nil, length, .FORWARD)
   }
-  
-  func performFFTAnalysis() {
-    guard audioBuffer.count >= bufferSize else {
-      return
-    }
-        
-    // perform FFT analysis
-    var realPart = audioBuffer
-    var imaginaryPart = [Float](repeating: 0, count: bufferSize)
-    realPart.withUnsafeMutableBufferPointer { realPointee in
-      imaginaryPart.withUnsafeMutableBufferPointer { imaginaryPointee in
-        
-        guard
-          let real = realPointee.baseAddress,
-          let imaginary = imaginaryPointee.baseAddress
-        else {
-          return
-        }
-        
-        var splitComplex = DSPSplitComplex(realp: real, imagp: imaginary)
-        
-        let log2n = vDSP_Length(log2(Float(bufferSize)))
-        guard let setup = vDSP_create_fftsetup(log2n, FFTRadix(kFFTRadix2)) else {
-          return
-        }
-        
-        vDSP_fft_zip(setup, &splitComplex, 1, log2n, FFTDirection(kFFTDirection_Forward))
-        vDSP_destroy_fftsetup(setup)
-        
-        // Calculate magnitude values
-        var magnitude: [Float] = .init(repeating: 0.0, count: bufferSize)
-        vDSP_zvmags(&splitComplex, 1, &magnitude, 1, vDSP_Length(bufferSize))
-        
-        // normalize FFT values
-        let normalizedValues = normalizeFFTValues(magnitude)
-        
-      }
-    }
-  }
-  
-  func normalizeFFTValues(_ values: [Float]) -> [Int] {
-    let max = values.max() ?? 1.0
-    // linear normalization between 0 and 10000
-    return values.map { Int(($0 / max) * 10000) }
-  }
-  
 }
