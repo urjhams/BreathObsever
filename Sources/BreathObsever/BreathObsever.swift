@@ -8,6 +8,7 @@ public class BreathObsever: ObservableObject {
     case recorderNotAllocated
     case notRecording
     case noTimerAllocated
+    case noAvailableInput
   }
 
   let session = AVAudioSession()
@@ -49,6 +50,10 @@ public class BreathObsever: ObservableObject {
   @Published
   public var convertedPowerLevel: Int = 0
   
+  /// State to know is the session successfully set up and available
+  @Published
+  public var sessionAvailable = false
+  
   // TODO: need a model to store the powerlevel array's peaks (up and down)
   // then use them to indicate cognitive load level
   
@@ -56,8 +61,12 @@ public class BreathObsever: ObservableObject {
     
   public init(cycle: TimeInterval) {
     self.cycle = cycle
-    
-    try? setupAudioRecorder()
+    do {
+      try setupAudioRecorder()
+      sessionAvailable = true
+    } catch {
+      sessionAvailable = false
+    }
     
     setupFFT()
   }
@@ -87,14 +96,13 @@ extension BreathObsever {
     guard let timer else {
       throw ObserverError.noTimerAllocated
     }
-    timer
-      .sink { [unowned self] _ in
-        guard self.isTracking else {
-          return
-        }
-        try? self.trackAudioSignal()
+    timer.sink { [weak self] _ in
+      guard let tracking = self?.isTracking, tracking else {
+        return
       }
-      .store(in: &cancellables)
+      try? self?.trackAudioSignal()
+    }
+    .store(in: &cancellables)
   }
   
   public func setupAudioRecorder() throws {
@@ -105,19 +113,12 @@ extension BreathObsever {
     
     // record if from phone's mic, playAndRecord if in AirPods
     //try AVInstance.setCategory(.record)
-    try session.setCategory(
-      .playAndRecord,             // should use playAndRecord instead just Record
-      mode: .measurement,
-      options: [
-        // Allow the use of Bluetooth devices
-        .allowBluetooth,
-        .allowBluetoothA2DP,
-        .allowAirPlay
-      ]
-    )
+    typealias Options = AVAudioSession.CategoryOptions
+    let options: Options = [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
+    try session.setCategory(.playAndRecord,  mode: .measurement, options: [options])
     
     guard let availableInputs = session.availableInputs else {
-      return
+      throw ObserverError.noAvailableInput
     }
         
     let availableBluetoothLE = availableInputs.first { description in
