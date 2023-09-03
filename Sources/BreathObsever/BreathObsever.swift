@@ -1,4 +1,4 @@
-import AVFoundation
+import AVFAudio
 import Combine
 import Accelerate
 
@@ -54,13 +54,18 @@ public class BreathObsever: ObservableObject {
   @Published
   public var sessionAvailable = false
   
+  public var endTime: TimeInterval
+  
+  private var cycleCounter = 0
+  
   // TODO: need a model to store the powerlevel array's peaks (up and down)
   // then use them to indicate cognitive load level
   
   let sampleRate = 44100.0
     
-  public init(cycle: TimeInterval) {
+  public init(cycle: TimeInterval, end: TimeInterval) {
     self.cycle = cycle
+    self.endTime = end
     do {
       try setupAudioRecorder()
       sessionAvailable = true
@@ -169,9 +174,18 @@ extension BreathObsever {
     }
     
     recorder.updateMeters()
+    
+    cycleCounter += 1
         
     // range from -160 dBFS to 0 dBFS
     let power = recorder.averagePower(forChannel: 0)
+    
+    let threshold: Float = -90
+    
+    // cut off any sounds below -90 dBFS to reduce background noise
+    guard power > threshold else {
+      return
+    }
     
     // add value to buffer
     audioBuffer.append(power)
@@ -180,6 +194,14 @@ extension BreathObsever {
       normalizedData = normalizeData(audioBuffer)
       analyzePeaks(normalizedData)
       audioBuffer.removeFirst(441)  // remove the oldest 0.01 seconds of Data at sample rate 44100
+    }
+    
+    guard cycleCounter <= Int(endTime) else {
+      normalizedData = normalizeData(audioBuffer)
+      analyzePeaks(normalizedData)
+      //TODO: stop the timer, end the session
+      //TODO: need empty the data when start a new tracking
+      return
     }
     
     // -- convert to 0-10000 scale and show in real time graph
