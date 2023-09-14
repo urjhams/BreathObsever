@@ -1,7 +1,6 @@
 import AVFAudio
 import Combine
 import Accelerate
-import SoundAnalysis
 
 public class BreathObsever: ObservableObject {
   
@@ -31,22 +30,6 @@ public class BreathObsever: ObservableObject {
       isTracking ? startTrackAudioSignal() : stopTrackAudioSignal()
     }
   }
-  
-  
-  // MARK: variables for sound analysis
-  /// A dispatch queue to asynchronously perform sound analysis on.
-  internal let analysisQueue = DispatchQueue(label: "com.quan.BreathMeasuring.SoundAnalysisQueue")
-  
-  /// An audio engine the app uses to record system input.
-  internal var audioEngine: AVAudioEngine?
-  
-  /// An analyzer that performs sound classification.
-  private var analyzer: SNAudioStreamAnalyzer?
-  
-  private var analysisObserver: SNResultsObserving?
-  
-  /// A subject to deliver sound classification results to, including an error, if necessary.
-  private var subject: PassthroughSubject<SNClassificationResult, Error>?
   
   
   // MARK: variables for FFT analysis
