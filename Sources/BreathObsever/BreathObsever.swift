@@ -1,6 +1,7 @@
 import AVFAudio
 import Combine
 import Accelerate
+import SoundAnalysis
 
 public class BreathObsever: ObservableObject {
   
@@ -14,12 +15,7 @@ public class BreathObsever: ObservableObject {
   let session = AVAudioSession()
   
   private var recorder: AVAudioRecorder?
-  
-  var audioBuffer: [Float] = []
-  var normalizedData: [Float] = []
-  
-  var fftSetup: vDSP_DFT_Setup?
-  
+    
   /// time of one update cycle
   let cycle: TimeInterval
   
@@ -35,6 +31,29 @@ public class BreathObsever: ObservableObject {
       isTracking ? startTrackAudioSignal() : stopTrackAudioSignal()
     }
   }
+  
+  
+  // MARK: variables for sound analysis
+  /// A dispatch queue to asynchronously perform sound analysis on.
+  internal let analysisQueue = DispatchQueue(label: "com.quan.BreathMeasuring.SoundAnalysisQueue")
+  
+  /// An audio engine the app uses to record system input.
+  internal var audioEngine: AVAudioEngine?
+  
+  /// An analyzer that performs sound classification.
+  private var analyzer: SNAudioStreamAnalyzer?
+  
+  private var analysisObserver: SNResultsObserving?
+  
+  /// A subject to deliver sound classification results to, including an error, if necessary.
+  private var subject: PassthroughSubject<SNClassificationResult, Error>?
+  
+  
+  // MARK: variables for FFT analysis
+  var audioBuffer: [Float] = []
+  var normalizedData: [Float] = []
+  var fftSetup: vDSP_DFT_Setup?
+  
   
   /// A flag that indicate if the timer is successfully created
   @Published
@@ -66,13 +85,14 @@ public class BreathObsever: ObservableObject {
   public init(cycle: TimeInterval, end: TimeInterval) {
     self.cycle = cycle
     self.endTime = end
+    
     do {
       try setupAudioRecorder()
       sessionAvailable = true
     } catch {
       sessionAvailable = false
     }
-    
+
     setupFFT()
   }
   
@@ -233,84 +253,5 @@ extension BreathObsever {
   }
   public func stopTrackAudioSignal() {
     recorder?.stop()
-  }
-}
-
-// MARK: - FFT Analyze
-extension BreathObsever {
-  
-  private func setupFFT() {
-    let length = vDSP_Length(1024)
-    fftSetup = vDSP_DFT_zop_CreateSetup(nil, length, .FORWARD)
-  }
-  
-  private func normalizeData(_ data: [Float]) -> [Float] {
-    var normalizedData = data
-    let dataSize = vDSP_Length(data.count)
-    
-    normalizedData.withUnsafeMutableBufferPointer { buffer in
-      vDSP_vsmul(buffer.baseAddress!, 1, [2.0 / Float(dataSize)], buffer.baseAddress!, 1, dataSize)
-    }
-    
-    return normalizedData
-  }
-  
-  func analyzePeaks(_ data: [Float]) {
-    guard let fftSetup else {
-      return
-    }
-    
-    var realIn = [Float](repeating: 0, count: data.count)
-    var imagIn = [Float](repeating: 0, count: data.count)
-    var realOut = [Float](repeating: 0, count: data.count)
-    var imagOut = [Float](repeating: 0, count: data.count)
-    
-    //fill in real input part with audio samples
-    for i in 0..<data.count {
-      realIn[i] = data[i]
-    }
-    
-    // perform fft
-    vDSP_DFT_Execute(fftSetup, &realIn, &imagIn, &realOut, &imagOut)
-    
-    var complex: DSPSplitComplex?
-    //wrap the result inside a complex vector representation used in the vDSP framework
-    realOut.withUnsafeMutableBufferPointer { real in
-      imagOut.withUnsafeMutableBufferPointer { imaginary in
-        guard
-          let realOutAddress = real.baseAddress,
-          let imagOutAddress = imaginary.baseAddress
-        else {
-          return
-        }
-        complex = .init(realp: realOutAddress, imagp: imagOutAddress)
-      }
-    }
-    
-    guard var complex else {
-      return
-    }
-    
-    // create and store the result in magnitudes array
-    var magnitudes = [Float](repeating: 0, count: data.count)
-    vDSP_zvabs(&complex, 1, &magnitudes, 1, vDSP_Length(data.count))
-    
-    // Find local maxima in the magnitudes array
-    var peaks: [(index: Int, magnitude: Float)] = []
-    for index in 1..<(magnitudes.count - 1) {
-      if magnitudes[index] > magnitudes[index - 1] && magnitudes[index] > magnitudes[index + 1] {
-        peaks.append((index: index, magnitude: magnitudes[index]))
-      }
-    }
-    
-    // Calculate distances between consecutive peaks
-    var peakDistances: [Int] = []
-    for index in 1..<peaks.count {
-      let distance = peaks[index].index - peaks[index - 1].index
-      peakDistances.append(distance)
-    }
-    
-    print("Detected Peaks: \(peaks)")
-    print("Peak Distances: \(peakDistances)")
   }
 }
