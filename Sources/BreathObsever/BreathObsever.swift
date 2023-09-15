@@ -16,16 +16,21 @@ public class BreathObsever: ObservableObject {
 
   let audioSession = AVAudioSession.sharedInstance()
   
-  private var recorder: AVAudioRecorder?
-  
-  private let analysisQueue = DispatchQueue(label: "com.quan.BreathObserver.AnalysisQueue")
-  
+  /// Audio engine for recording
   private var audioEngine: AVAudioEngine?
+  
+  /// A dispatch queue to asynchronously perform analysis on.
+  private let analysisQueue = DispatchQueue(label: "com.breathObserver.AnalysisQueue")
+  
+  /// An analyzer that performs sound classification.
+  private var classifyAnalyzer: SNAudioStreamAnalyzer?
   
   private var soundAnalysisSubject: PassthroughSubject<SNClassificationResult, Error>?
   
   private var cancellables = Set<AnyCancellable>()
   
+  private var observer: SNResultsObserving?
+    
   internal var fftAnalyzer = FFTAnlyzer()
   
   @Published
@@ -98,7 +103,7 @@ extension BreathObsever {
   }
 }
 
-// MARK: - Sounds classification
+// MARK: - AudioSessionInteruptions
 extension BreathObsever {
   /// Starts observing for audio recording interruptions.
   private func startListeningForAudioSessionInterruptions() {
@@ -136,73 +141,67 @@ extension BreathObsever {
   private func handleAudioSessionInterruption(_ notification: Notification) {
     let error = ObserverError.audioStreamInterrupted
     soundAnalysisSubject?.send(completion: .failure(error))
-//    stopSoundClassification()
+    stopProcess()
   }
 }
 
-
-
-// MARK: - track audio
+// MARK: - SoundsAnalysis
 extension BreathObsever {
   
-  ///  Record audio signal and return the represent value as decibel
-  public func trackAudioSignal() throws {
-    guard let recorder else {
-      throw ObserverError.recorderNotAllocated
+  public typealias Config = (request: SNRequest, observer: SNResultsObserving)
+  
+  public func startProcess(config: Config) throws {
+    stopProcess()
+    
+    do {
+      try startAudioSession()
+      try ensureMicrophoneAccess()
+      
+      let audioEngine = AVAudioEngine()
+      self.audioEngine = audioEngine
+      
+      let audioFormat = audioEngine.inputNode.outputFormat(forBus: 0)
+      
+      let classifyAnalyzer = SNAudioStreamAnalyzer(format: audioFormat)
+      self.classifyAnalyzer = classifyAnalyzer
+      
+      try classifyAnalyzer.add(config.request, withObserver: config.observer)
+      observer = config.observer
+      
+      // start to record
+      audioEngine
+        .inputNode
+        .installTap(onBus: 0, bufferSize: 4096, format: audioFormat) { [weak self] buffer, time in
+          self?.analysisQueue.async {
+            classifyAnalyzer.analyze(buffer, atAudioFramePosition: time.sampleTime)
+            
+            // TODO: perform FFT here as well
+          }
+        }
+      
+      try audioEngine.start()
+    } catch {
+      stopProcess()
+      throw error
     }
-    
-    guard recorder.isRecording else {
-      throw ObserverError.notRecording
-    }
-    
-    recorder.updateMeters()
-    
-        
-    // range from -160 dBFS to 0 dBFS
-    let power = recorder.averagePower(forChannel: 0)
-    
-    let threshold: Float = -90
-    
-    // cut off any sounds below -90 dBFS to reduce background noise
-    guard power > threshold else {
-      return
-    }
-    
-    fftAnalyzer.appendAndAnalyze(
-      audioPower: power,
-      time: 441000 // `cycle` seconds at `sampeRate` Hz
-    )
-    
-    fftAnalyzer.analyzeCurrentDataSet()
-    
-    // -- convert to 0-10000 scale and show in real time graph
-    // Convert dB value to linear scale
-    digitalPowerLevel = Double(power)
-    
-    let convtered = convertAudioSignal(power)
-    
-    // this converted power level is used for real time data
-    convertedPowerLevel = convtered
-    
   }
   
-  /// The peakPower(forChannel:) function in AVFoundation returns the peak power of an
-  /// audio signal in decibels (dB), which is not a 0-100000 scale.
-  /// To convert the result to a 0-100000 scale, you can first convert the decibel value to a linear
-  /// scale and then map it to the desired range.
-  ///
-  /// Use 100000 scale for a more accurate power with low noise, since we working with breathing sounds
-  private func convertAudioSignal(_ value: Float) -> Int {
-    Int(pow(10, value / 20) * 100000)
-  }
-}
-
-// MARK: - toggle
-extension BreathObsever {
-  public func startTrackAudioSignal() {
-    recorder?.record()
-  }
-  public func stopTrackAudioSignal() {
-    recorder?.stop()
+  public func stopProcess() {
+    autoreleasepool { [weak self] in
+      guard let self else {
+        return
+      }
+      
+      audioEngine?.stop()
+      audioEngine?.inputNode.removeTap(onBus: 0)
+      
+      classifyAnalyzer?.removeAllRequests()
+      
+      classifyAnalyzer = nil
+      audioEngine = nil
+      observer = nil
+    }
+    
+    stopAudioSession()
   }
 }
