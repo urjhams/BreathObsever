@@ -11,6 +11,7 @@ public class BreathObsever: ObservableObject {
     case noTimerAllocated
     case noAvailableInput
     case noMicrophoneAccess
+    case audioStreamInterrupted
   }
 
   let audioSession = AVAudioSession.sharedInstance()
@@ -96,6 +97,50 @@ extension BreathObsever {
     }
   }
 }
+
+// MARK: - Sounds classification
+extension BreathObsever {
+  /// Starts observing for audio recording interruptions.
+  private func startListeningForAudioSessionInterruptions() {
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleAudioSessionInterruption),
+      name: AVAudioSession.interruptionNotification,
+      object: nil
+    )
+    NotificationCenter.default.addObserver(
+      self,
+      selector: #selector(handleAudioSessionInterruption),
+      name: AVAudioSession.mediaServicesWereLostNotification,
+      object: nil
+    )
+  }
+  
+  /// Stops observing for audio recording interruptions.
+  private func stopListeningForAudioSessionInterruptions() {
+    NotificationCenter
+      .default
+      .removeObserver(self, name: AVAudioSession.interruptionNotification,object: nil)
+    NotificationCenter
+      .default
+      .removeObserver(self, name: AVAudioSession.mediaServicesWereLostNotification, object: nil)
+  }
+  
+  /// Handles notifications the system emits for audio interruptions.
+  ///
+  /// When an interruption occurs, the app notifies the subject of an error. The method terminates sound
+  /// classification, so restart it to resume classification.
+  ///
+  /// - Parameter notification: A notification the system emits that indicates an interruption.
+  @objc
+  private func handleAudioSessionInterruption(_ notification: Notification) {
+    let error = ObserverError.audioStreamInterrupted
+    soundAnalysisSubject?.send(completion: .failure(error))
+//    stopSoundClassification()
+  }
+}
+
+
 
 // MARK: - track audio
 extension BreathObsever {
