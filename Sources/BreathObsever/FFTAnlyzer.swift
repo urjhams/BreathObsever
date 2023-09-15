@@ -1,7 +1,26 @@
 import Accelerate
 
+public class FFTAnlyzer: NSObject {
+  // MARK: variables for FFT analysis
+  var audioBuffer: [Float] = []
+  var normalizedData: [Float] = []
+  var fftSetup: vDSP_DFT_Setup?
+  
+  public override init() {
+    super.init()
+    setupFFT()
+  }
+  
+  deinit {
+    // free memory of the fftSetup as it is used in low level memory.
+    if let fftSetup {
+      vDSP_DFT_DestroySetup(fftSetup)
+    }
+  }
+}
+
 // MARK: - FFT Analyze
-extension BreathObsever {
+extension FFTAnlyzer {
   
   internal func setupFFT() {
     let length = vDSP_Length(1024)

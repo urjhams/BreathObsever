@@ -31,12 +31,7 @@ public class BreathObsever: ObservableObject {
     }
   }
   
-  
-  // MARK: variables for FFT analysis
-  var audioBuffer: [Float] = []
-  var normalizedData: [Float] = []
-  var fftSetup: vDSP_DFT_Setup?
-  
+  internal var fftAnalyzer = FFTAnlyzer()
   
   /// A flag that indicate if the timer is successfully created
   @Published
@@ -76,14 +71,6 @@ public class BreathObsever: ObservableObject {
       sessionAvailable = false
     }
 
-    setupFFT()
-  }
-  
-  deinit {
-    // free memory of the fftSetup as it is used in low level memory.
-    if let fftSetup {
-      vDSP_DFT_DestroySetup(fftSetup)
-    }
   }
 }
 
@@ -190,18 +177,19 @@ extension BreathObsever {
       return
     }
     
+    // TODO: put the part bellow in FFTAnalyzer
     // add value to buffer
-    audioBuffer.append(power)
+    fftAnalyzer.audioBuffer.append(power)
     
-    if audioBuffer.count >= Int(sampleRate * cycle) { // `cycle` seconds at `sampeRate` Hz
-      normalizedData = normalizeData(audioBuffer)
-      analyzePeaks(normalizedData)
-      audioBuffer.removeFirst(441)  // remove the oldest 0.01 seconds of Data at sample rate 44100
+    if fftAnalyzer.audioBuffer.count >= Int(sampleRate * cycle) { // `cycle` seconds at `sampeRate` Hz
+      fftAnalyzer.normalizedData = fftAnalyzer.normalizeData(fftAnalyzer.audioBuffer)
+      fftAnalyzer.analyzePeaks(fftAnalyzer.normalizedData)
+      fftAnalyzer.audioBuffer.removeFirst(441)  // remove the oldest 0.01 seconds of Data at sample rate 44100
     }
     
     guard cycleCounter <= Int(endTime) else {
-      normalizedData = normalizeData(audioBuffer)
-      analyzePeaks(normalizedData)
+      fftAnalyzer.normalizedData = fftAnalyzer.normalizeData(fftAnalyzer.audioBuffer)
+      fftAnalyzer.analyzePeaks(fftAnalyzer.normalizedData)
       //TODO: stop the timer, end the session
       //TODO: need empty the data when start a new tracking
       return

@@ -30,6 +30,33 @@ public final class BreathClassifier: NSObject {
 }
 
 public extension BreathClassifier {
+  func startBreathClassification(
+    subject: PassthroughSubject<SNClassificationResult, Error>,
+    inferenceWindowSize: Double,
+    overlapFactor: Double
+  ) {
+    stopSoundClassification()
+    
+    do {
+      let observer = ClassificationResultsSubject(subject: subject)
+      
+      let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
+      request.windowDuration = CMTimeMakeWithSeconds(inferenceWindowSize, preferredTimescale: 48_000)
+      request.overlapFactor = overlapFactor
+      
+      self.subject = subject
+      
+      startListeningForAudioSessionInterruptions()
+      try startAnalyzing((request, observer))
+    } catch {
+      subject.send(completion: .failure(error))
+      self.subject = nil
+      stopSoundClassification()
+    }
+  }
+}
+
+public extension BreathClassifier {
   
   typealias Broadcasting = (request: SNRequest, observer: SNResultsObserving)
   
