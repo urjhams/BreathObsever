@@ -177,19 +177,13 @@ extension BreathObsever {
       return
     }
     
-    // TODO: put the part bellow in FFTAnalyzer
-    // add value to buffer
-    fftAnalyzer.audioBuffer.append(power)
-    
-    if fftAnalyzer.audioBuffer.count >= Int(sampleRate * cycle) { // `cycle` seconds at `sampeRate` Hz
-      fftAnalyzer.normalizedData = fftAnalyzer.normalizeData(fftAnalyzer.audioBuffer)
-      fftAnalyzer.analyzePeaks(fftAnalyzer.normalizedData)
-      fftAnalyzer.audioBuffer.removeFirst(441)  // remove the oldest 0.01 seconds of Data at sample rate 44100
-    }
+    fftAnalyzer.appendAndAnalyze(
+      audioPower: power,
+      time: Int(sampleRate * cycle) // `cycle` seconds at `sampeRate` Hz
+    )
     
     guard cycleCounter <= Int(endTime) else {
-      fftAnalyzer.normalizedData = fftAnalyzer.normalizeData(fftAnalyzer.audioBuffer)
-      fftAnalyzer.analyzePeaks(fftAnalyzer.normalizedData)
+      fftAnalyzer.analyzeCurrentDataSet()
       //TODO: stop the timer, end the session
       //TODO: need empty the data when start a new tracking
       return

@@ -19,6 +19,23 @@ public class FFTAnlyzer: NSObject {
   }
 }
 
+extension FFTAnlyzer {
+  public func appendAndAnalyze(audioPower power: Float, time: Int) {
+    // add value to buffer
+    audioBuffer.append(power)
+    
+    if audioBuffer.count >= time {
+      analyzeCurrentDataSet()
+      audioBuffer.removeFirst(441)  // remove the oldest 0.01 seconds of Data at sample rate 44100
+    }
+  }
+  
+  public func analyzeCurrentDataSet() {
+    normalizedData = normalizeData(audioBuffer)
+    analyzePeaks(normalizedData)
+  }
+}
+
 // MARK: - FFT Analyze
 extension FFTAnlyzer {
   
