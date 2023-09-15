@@ -142,7 +142,7 @@ extension BreathObsever {
   @objc
   private func handleAudioSessionInterruption(_ notification: Notification) {
     let error = ObserverError.audioStreamInterrupted
-    soundAnalysisSubject?.send(completion: .failure(error))
+    soundAnalysisSubject.send(completion: .failure(error))
     // TODO: send the failure to FFT subject as well
     stopProcess()
   }
