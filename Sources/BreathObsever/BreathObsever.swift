@@ -25,13 +25,15 @@ public class BreathObsever: ObservableObject {
   /// An analyzer that performs sound classification.
   private var classifyAnalyzer: SNAudioStreamAnalyzer?
   
-  private var soundAnalysisSubject: PassthroughSubject<SNClassificationResult, Error>?
+  private var soundAnalysisSubject = PassthroughSubject<SNClassificationResult, Error>()
   
   private var cancellables = Set<AnyCancellable>()
   
   private var observer: SNResultsObserving?
     
   internal var fftAnalyzer = FFTAnlyzer()
+  
+  private var fftAnalysisSubject = PassthroughSubject<[Float], Error>()
   
   @Published
   public var digitalPowerLevel: Double = 0
@@ -141,6 +143,7 @@ extension BreathObsever {
   private func handleAudioSessionInterruption(_ notification: Notification) {
     let error = ObserverError.audioStreamInterrupted
     soundAnalysisSubject?.send(completion: .failure(error))
+    // TODO: send the failure to FFT subject as well
     stopProcess()
   }
 }
@@ -150,8 +153,8 @@ extension BreathObsever {
   
   public typealias Config = (request: SNRequest, observer: SNResultsObserving)
   
-  public func startProcess(config: Config) throws {
-    stopProcess()
+  public func startAnalyzing(config: Config) throws {
+    stopAnalyzing()
     
     do {
       try startAudioSession()
@@ -176,17 +179,19 @@ extension BreathObsever {
             classifyAnalyzer.analyze(buffer, atAudioFramePosition: time.sampleTime)
             
             // TODO: perform FFT here as well
+            // TODO: the fft result saved in another passthrough subject
+            // TODO: use the Publisher.CombineLastest() of that subject and the sound analyze subject
           }
         }
       
       try audioEngine.start()
     } catch {
-      stopProcess()
+      stopAnalyzing()
       throw error
     }
   }
   
-  public func stopProcess() {
+  public func stopAnalyzing() {
     autoreleasepool { [weak self] in
       guard let self else {
         return
@@ -204,4 +209,33 @@ extension BreathObsever {
     
     stopAudioSession()
   }
+  
+  public func startProcess() {
+    stopProcess()
+    
+    // TODO: need another subject to save ECG data
+    // may be we keep collecting ECG data and save to an array,
+    // when the the combineLatest receiveValue, we collect the data in array and empty it
+    Publishers
+      .CombineLatest(soundAnalysisSubject, fftAnalysisSubject)
+      .receive(on: DispatchQueue.main)
+      .sink { _ in
+        
+      } receiveValue: { result in
+        // TODO: handle the combine value of sound classfy result and fft result
+      }
+
+    
+    do {
+      
+    } catch {
+      
+    }
+  }
+  
+  public func stopProcess() {
+    stopAnalyzing()
+    stopListeningForAudioSessionInterruptions()
+  }
 }
+
