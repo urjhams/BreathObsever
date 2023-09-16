@@ -12,31 +12,72 @@ public class FFTAnlyzer: NSObject {
   public convenience init(bufferSize: UInt32) {
     self.init()
     self.bufferSize = bufferSize
-    setupFFT()
   }
   
-  deinit {
-    // free memory of the fftSetup as it is used in low level memory.
-    if let fftSetup {
-      vDSP_DFT_DestroySetup(fftSetup)
-    }
-  }
 }
 
 extension FFTAnlyzer {
-  public func performFFT(buffer: AVAudioPCMBuffer) {
+  public typealias FFTResult = (real: [Float], imaginary: [Float])
+  
+  public func performFFT(buffer: AVAudioPCMBuffer) -> FFTResult? {
+    guard let fftSetup = setupFFT() else {
+      return nil
+    }
     let bufferSize = Int(buffer.frameLength)
+    let fftLength = bufferSize / 2
     
+    var realBuffer = [Float](repeating: 0.0, count: fftLength)
+    var imaginaryBuffer = [Float](repeating: 0.0, count: fftLength)
     
+    var splitComplex: DSPSplitComplex?
+    //wrap the result inside a complex vector representation used in the vDSP framework
+    realBuffer.withUnsafeMutableBufferPointer { real in
+      imaginaryBuffer.withUnsafeMutableBufferPointer { imaginary in
+        guard
+          let realOutAddress = real.baseAddress,
+          let imagOutAddress = imaginary.baseAddress
+        else {
+          return
+        }
+        splitComplex = .init(realp: realOutAddress, imagp: imagOutAddress)
+      }
+    }
+    
+    guard var splitComplex, let floatBuffer = buffer.floatChannelData else {
+      return nil
+    }
+    
+    // Convert the audio buffer to a float array
+    var audioBuffer = Array(UnsafeBufferPointer(start: floatBuffer[0], count: bufferSize))
+    
+    // perform the FFT
+    audioBuffer.withUnsafeMutableBufferPointer { bufferPointer in
+      let vDSPLenth = vDSP_Length(log2f(Float(fftLength)))
+      vDSP_fft_zip(fftSetup, &splitComplex, 1, vDSPLenth, FFTDirection(FFT_FORWARD))
+    }
+    
+    cleanFFTSetup(fftSetup)
+    
+    // extract the result
+    let realPart = splitComplex.realp
+    let real = Array(UnsafeBufferPointer(start: realPart, count: fftLength))
+    let imaginaryPart = splitComplex.imagp
+    let imaginary = Array(UnsafeBufferPointer(start: imaginaryPart, count: fftLength))
+    
+    return (real, imaginary)
   }
 }
 
 // MARK: - FFT Analyze setup
 extension FFTAnlyzer {
   
-  internal func setupFFT() {
+  internal func setupFFT() -> vDSP_DFT_Setup? {
     let length = vDSP_Length(bufferSize)
-    fftSetup = vDSP_create_fftsetup(length, Int32(kFFTRadix2))
+    return vDSP_create_fftsetup(length, Int32(kFFTRadix2))
+  }
+  
+  internal func cleanFFTSetup(_ fftSetup: FFTSetup) {
+    vDSP_destroy_fftsetup(fftSetup)
   }
 }
 
@@ -54,10 +95,7 @@ extension FFTAnlyzer {
     return normalizedData
   }
   
-  func analyzePeaks(_ data: [Float]) {
-    guard let fftSetup else {
-      return
-    }
+  func analyzePeaks(_ data: [Float], fftSetup: vDSP_DFT_Setup) {
     
     var realIn = [Float](repeating: 0, count: data.count)
     var imagIn = [Float](repeating: 0, count: data.count)

@@ -6,3 +6,10 @@ extension Collection {
     return indices.contains(index) ? self[index] : nil
   }
 }
+
+extension UnsafeMutablePointer where Pointee == Float {
+  func array(count: Int) -> [Float] {
+    Array(UnsafeMutableBufferPointer(start: self, count: count))
+  }
+}
+

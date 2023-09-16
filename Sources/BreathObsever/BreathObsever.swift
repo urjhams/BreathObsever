@@ -3,7 +3,24 @@ import SoundAnalysis
 import Combine
 import Accelerate
 
-public class BreathObsever: ObservableObject {
+public enum Breathing {
+  case breath(confidence: Double)
+  case none
+  
+  init(from result: SNClassificationResult) {
+    guard
+      let breath = result.classification(forIdentifier: "breathing"),
+      breath.confidence > 0.7 // 70 % confidence
+    else {
+      self = .none
+      return
+    }
+    self = .breath(confidence: breath.confidence)
+  }
+}
+
+
+public class BreathObsever: NSObject, ObservableObject {
   
   public enum ObserverError: Error {
     case recorderNotAllocated
@@ -13,6 +30,8 @@ public class BreathObsever: ObservableObject {
     case noMicrophoneAccess
     case audioStreamInterrupted
   }
+  
+  let sampleRate = 44100.0
 
   let audioSession = AVAudioSession.sharedInstance()
   
@@ -25,26 +44,35 @@ public class BreathObsever: ObservableObject {
   /// An analyzer that performs sound classification.
   private var classifyAnalyzer: SNAudioStreamAnalyzer?
   
-  private var soundAnalysisSubject = PassthroughSubject<SNClassificationResult, Error>()
+  private var soundAnalysisSubject = PassthroughSubject<Breathing, Never>()
+  
+  private var soundAnalysisTempResult = [SNClassificationResult]()
   
   private var cancellables = Set<AnyCancellable>()
-  
-  private var observer: SNResultsObserving?
-  
+    
   let bufferSize: UInt32 = 4096
     
   internal lazy var fftAnalyzer = FFTAnlyzer(bufferSize: bufferSize)
   
-  private var fftAnalysisSubject = PassthroughSubject<[Float], Error>()
+  private var fftAnalysisSubject = PassthroughSubject<FFTAnlyzer.FFTResult, Never>()
   
-  @Published
-  public var digitalPowerLevel: Double = 0
+  /// Indicates the amount of audio, in seconds, that informs a prediction.
+  var inferenceWindowSize = Double(1.5)
   
-  @Published
-  public var convertedPowerLevel: Int = 0
+  /// The amount of overlap between consecutive analysis windows.
+  ///
+  /// The system performs sound classification on a window-by-window basis. The system divides an
+  /// audio stream into windows, and assigns labels and confidence values. This value determines how
+  /// much two consecutive windows overlap. For example, 0.9 means that each window shares 90% of
+  /// the audio that the previous window uses.
+  var overlapFactor = Double(0.9)
       
-  public init() {
+  public override init() {
     
+  }
+  
+  deinit {
+    cancellables.removeAll()
   }
 }
 
@@ -85,6 +113,7 @@ extension BreathObsever {
       typealias Options = AVAudioSession.CategoryOptions
       let options: Options = [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
       try audioSession.setCategory(.record, mode: .measurement, options: options)
+      try audioSession.setPreferredSampleRate(sampleRate)
       
       let allowedPorts: [AVAudioSession.Port] = [
         .bluetoothLE,
@@ -144,8 +173,6 @@ extension BreathObsever {
   @objc
   private func handleAudioSessionInterruption(_ notification: Notification) {
     let error = ObserverError.audioStreamInterrupted
-    soundAnalysisSubject.send(completion: .failure(error))
-    // TODO: send the failure to FFT subject as well
     stopProcess()
   }
 }
@@ -155,7 +182,7 @@ extension BreathObsever {
   
   public typealias Config = (request: SNRequest, observer: SNResultsObserving)
   
-  public func startAnalyzing(config: Config) throws {
+  public func startAnalyzing(request: SNRequest) throws {
     stopAnalyzing()
     
     do {
@@ -167,8 +194,7 @@ extension BreathObsever {
       let classifyAnalyzer = SNAudioStreamAnalyzer(format: audioFormat)
       self.classifyAnalyzer = classifyAnalyzer
       
-      try classifyAnalyzer.add(config.request, withObserver: config.observer)
-      observer = config.observer
+      try classifyAnalyzer.add(request, withObserver: self)
       
       // start to record
       audioEngine
@@ -176,10 +202,11 @@ extension BreathObsever {
         .installTap(onBus: 0, bufferSize: bufferSize, format: audioFormat) { [weak self] buffer, time in
           self?.analysisQueue.async {
             classifyAnalyzer.analyze(buffer, atAudioFramePosition: time.sampleTime)
-            self?.fftAnalyzer.performFFT(buffer: buffer)
-            // TODO: perform FFT here as well
-            // TODO: the fft result saved in another passthrough subject
-            // TODO: use the Publisher.CombineLastest() of that subject and the sound analyze subject
+            
+            if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
+              print("🙆🏻 send fft subject result")
+              self?.fftAnalysisSubject.send(fftResult)
+            }
           }
         }
       
@@ -202,7 +229,6 @@ extension BreathObsever {
       classifyAnalyzer?.removeAllRequests()
       
       classifyAnalyzer = nil
-      observer = nil
     }
     
     stopAudioSession()
@@ -214,20 +240,33 @@ extension BreathObsever {
     // TODO: need another subject to save ECG data
     // may be we keep collecting ECG data and save to an array,
     // when the the combineLatest receiveValue, we collect the data in array and empty it
+    // prepare the handle of the data
     Publishers
       .CombineLatest(soundAnalysisSubject, fftAnalysisSubject)
       .receive(on: DispatchQueue.main)
       .sink { _ in
         
-      } receiveValue: { result in
+      } receiveValue: { classifyResult, fftResult in
         // TODO: handle the combine value of sound classfy result and fft result
+        DispatchQueue.main.async {
+          print("🎉 result: \nclassify: \(classifyResult)\nfft: \(fftResult)")
+        }
       }
-
+      .store(in: &cancellables)
     
+    // setup the sound analysis request
     do {
+      let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
+      request.windowDuration = CMTimeMakeWithSeconds(
+        inferenceWindowSize,
+        preferredTimescale: 48_000
+      )
+      request.overlapFactor = overlapFactor
       
+      startListeningForAudioSessionInterruptions()
+      try startAnalyzing(request: request)
     } catch {
-      
+      stopProcess()
     }
   }
   
@@ -237,3 +276,18 @@ extension BreathObsever {
   }
 }
 
+
+extension BreathObsever: SNResultsObserving {
+  public func request(_ request: SNRequest, didProduce result: SNResult) {
+    guard let result = result as? SNClassificationResult else {
+      return
+    }
+    print("🙆🏻 send sound analysis subject result")
+    soundAnalysisSubject.send(Breathing(from: result))
+  }
+  
+  public func requestDidComplete(_ request: SNRequest) {
+    // we can ignore this since we use a Never passthrough subject
+    soundAnalysisSubject.send(completion: .finished)
+  }
+}
