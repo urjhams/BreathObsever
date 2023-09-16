@@ -17,7 +17,7 @@ public class BreathObsever: ObservableObject {
   let audioSession = AVAudioSession.sharedInstance()
   
   /// Audio engine for recording
-  private var audioEngine: AVAudioEngine?
+  private let audioEngine = AVAudioEngine()
   
   /// A dispatch queue to asynchronously perform analysis on.
   private let analysisQueue = DispatchQueue(label: "com.breathObserver.AnalysisQueue")
@@ -30,8 +30,10 @@ public class BreathObsever: ObservableObject {
   private var cancellables = Set<AnyCancellable>()
   
   private var observer: SNResultsObserving?
+  
+  let bufferSize: UInt32 = 4096
     
-  internal var fftAnalyzer = FFTAnlyzer()
+  internal lazy var fftAnalyzer = FFTAnlyzer(bufferSize: bufferSize)
   
   private var fftAnalysisSubject = PassthroughSubject<[Float], Error>()
   
@@ -160,9 +162,6 @@ extension BreathObsever {
       try startAudioSession()
       try ensureMicrophoneAccess()
       
-      let audioEngine = AVAudioEngine()
-      self.audioEngine = audioEngine
-      
       let audioFormat = audioEngine.inputNode.outputFormat(forBus: 0)
       
       let classifyAnalyzer = SNAudioStreamAnalyzer(format: audioFormat)
@@ -174,10 +173,10 @@ extension BreathObsever {
       // start to record
       audioEngine
         .inputNode
-        .installTap(onBus: 0, bufferSize: 4096, format: audioFormat) { [weak self] buffer, time in
+        .installTap(onBus: 0, bufferSize: bufferSize, format: audioFormat) { [weak self] buffer, time in
           self?.analysisQueue.async {
             classifyAnalyzer.analyze(buffer, atAudioFramePosition: time.sampleTime)
-            
+            self?.fftAnalyzer.performFFT(buffer: buffer)
             // TODO: perform FFT here as well
             // TODO: the fft result saved in another passthrough subject
             // TODO: use the Publisher.CombineLastest() of that subject and the sound analyze subject
@@ -197,13 +196,12 @@ extension BreathObsever {
         return
       }
       
-      audioEngine?.stop()
-      audioEngine?.inputNode.removeTap(onBus: 0)
+      audioEngine.stop()
+      audioEngine.inputNode.removeTap(onBus: 0)
       
       classifyAnalyzer?.removeAllRequests()
       
       classifyAnalyzer = nil
-      audioEngine = nil
       observer = nil
     }
     

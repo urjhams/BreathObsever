@@ -1,13 +1,20 @@
 import Accelerate
+import AVFAudio
 
 public class FFTAnlyzer: NSObject {
   // MARK: variables for FFT analysis
   var audioBuffer: [Float] = []
   var normalizedData: [Float] = []
   var fftSetup: vDSP_DFT_Setup?
+  var bufferSize: UInt32 = 1024
   
-  public override init() {
+  private override init() {
     super.init()
+  }
+  
+  public convenience init(bufferSize: UInt32) {
+    self.init()
+    self.bufferSize = bufferSize
     setupFFT()
   }
   
@@ -16,6 +23,14 @@ public class FFTAnlyzer: NSObject {
     if let fftSetup {
       vDSP_DFT_DestroySetup(fftSetup)
     }
+  }
+}
+
+extension FFTAnlyzer {
+  public func performFFT(buffer: AVAudioPCMBuffer) {
+    let bufferSize = Int(buffer.frameLength)
+    
+    
   }
 }
 
@@ -36,13 +51,17 @@ extension FFTAnlyzer {
   }
 }
 
-// MARK: - FFT Analyze
+// MARK: - FFT Analyze setup
 extension FFTAnlyzer {
   
   internal func setupFFT() {
-    let length = vDSP_Length(1024)
-    fftSetup = vDSP_DFT_zop_CreateSetup(nil, length, .FORWARD)
+    let length = vDSP_Length(bufferSize)
+    fftSetup = vDSP_create_fftsetup(length, Int32(kFFTRadix2))
   }
+}
+
+// MARK: - Peaks (fftSetup = vDSP_DFT_zop_CreateSetup(nil, length, .FORWARD) in setupFFT() instead)
+extension FFTAnlyzer {
   
   internal func normalizeData(_ data: [Float]) -> [Float] {
     var normalizedData = data
