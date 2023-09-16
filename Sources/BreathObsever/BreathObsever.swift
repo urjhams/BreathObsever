@@ -10,12 +10,21 @@ public enum Breathing {
   init(from result: SNClassificationResult) {
     guard
       let breath = result.classification(forIdentifier: "breathing"),
-      breath.confidence > 0.7 // 70 % confidence
+      breath.confidence > 0.0 // > 50 % confidence
     else {
       self = .none
       return
     }
     self = .breath(confidence: breath.confidence)
+  }
+  
+  var confidence: Int {
+    switch self {
+    case .breath(let value):
+      return Int(value * 100)
+    default:
+      return 0
+    }
   }
 }
 
@@ -33,10 +42,10 @@ public class BreathObsever: NSObject, ObservableObject {
   
   let sampleRate = 44100.0
 
-  let audioSession = AVAudioSession.sharedInstance()
+  let audioSession: AVAudioSession
   
   /// Audio engine for recording
-  private let audioEngine = AVAudioEngine()
+  private let audioEngine: AVAudioEngine
   
   /// A dispatch queue to asynchronously perform analysis on.
   private let analysisQueue = DispatchQueue(label: "com.breathObserver.AnalysisQueue")
@@ -56,6 +65,8 @@ public class BreathObsever: NSObject, ObservableObject {
   
   private var fftAnalysisSubject = PassthroughSubject<FFTAnlyzer.FFTResult, Never>()
   
+  private var powerSubject = PassthroughSubject<Float, Never>()
+  
   /// Indicates the amount of audio, in seconds, that informs a prediction.
   var inferenceWindowSize = Double(1.5)
   
@@ -68,7 +79,8 @@ public class BreathObsever: NSObject, ObservableObject {
   var overlapFactor = Double(0.9)
       
   public override init() {
-    
+    audioEngine = AVAudioEngine()
+    audioSession = AVAudioSession.sharedInstance()
   }
   
   deinit {
@@ -110,25 +122,10 @@ extension BreathObsever {
   private func startAudioSession() throws {
     stopAudioSession()
     do {
-      typealias Options = AVAudioSession.CategoryOptions
-      let options: Options = [.allowBluetooth, .allowBluetoothA2DP, .allowAirPlay]
-      try audioSession.setCategory(.record, mode: .measurement, options: options)
-      try audioSession.setPreferredSampleRate(sampleRate)
+      try audioSession.setCategory(.record, mode: .measurement, options: [.allowBluetooth])
+      try audioSession.setPreferredSampleRate(audioEngine.inputNode.outputFormat(forBus: 0).sampleRate)
       
-      let allowedPorts: [AVAudioSession.Port] = [
-        .bluetoothLE,
-        .bluetoothHFP,
-        .airPlay,
-        .bluetoothA2DP
-      ]
-      guard
-        let inputs = audioSession.availableInputs,
-        let _ = inputs.first(where: { description in allowedPorts.contains(description.portType) })
-      else {
-        throw ObserverError.noAvailableInput
-      }
-      
-      try audioSession.setActive(true, options: .notifyOthersOnDeactivation)
+      try audioSession.setActive(true)
     } catch {
       stopAudioSession()
       throw error
@@ -172,7 +169,6 @@ extension BreathObsever {
   /// - Parameter notification: A notification the system emits that indicates an interruption.
   @objc
   private func handleAudioSessionInterruption(_ notification: Notification) {
-    let error = ObserverError.audioStreamInterrupted
     stopProcess()
   }
 }
@@ -203,10 +199,25 @@ extension BreathObsever {
           self?.analysisQueue.async {
             classifyAnalyzer.analyze(buffer, atAudioFramePosition: time.sampleTime)
             
-            if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
-              print("🙆🏻 send fft subject result")
-              self?.fftAnalysisSubject.send(fftResult)
+//            if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
+//              print("🙆🏻 send fft subject result")
+//              self?.fftAnalysisSubject.send(fftResult)
+//            }
+            
+            let samples = UnsafeBufferPointer(
+              start: buffer.floatChannelData?[0],
+              count: Int(buffer.frameLength)
+            )
+            var power: Float = 0.0
+            
+            for sample in samples {
+              power += sample * sample
             }
+            
+            power /= Float(samples.count)
+            
+            let powerInDB = 10.0 * log10(power)
+            self?.powerSubject.send(powerInDB)
           }
         }
       
@@ -242,14 +253,15 @@ extension BreathObsever {
     // when the the combineLatest receiveValue, we collect the data in array and empty it
     // prepare the handle of the data
     Publishers
-      .CombineLatest(soundAnalysisSubject, fftAnalysisSubject)
+      .CombineLatest(soundAnalysisSubject, powerSubject)
       .receive(on: DispatchQueue.main)
       .sink { _ in
         
-      } receiveValue: { classifyResult, fftResult in
+      } receiveValue: { breathing, power in
         // TODO: handle the combine value of sound classfy result and fft result
         DispatchQueue.main.async {
-          print("🎉 result: \nclassify: \(classifyResult)\nfft: \(fftResult)")
+          // breathing is in around between -85 to -60 (~64 when almost snooring, breathing loud)
+          print("🎉 power: \(Int(power)) db - breath: \(breathing.confidence)%")
         }
       }
       .store(in: &cancellables)
@@ -266,6 +278,7 @@ extension BreathObsever {
       startListeningForAudioSessionInterruptions()
       try startAnalyzing(request: request)
     } catch {
+      print("❗️ \(error.localizedDescription)")
       stopProcess()
     }
   }
@@ -282,7 +295,6 @@ extension BreathObsever: SNResultsObserving {
     guard let result = result as? SNClassificationResult else {
       return
     }
-    print("🙆🏻 send sound analysis subject result")
     soundAnalysisSubject.send(Breathing(from: result))
   }
   
