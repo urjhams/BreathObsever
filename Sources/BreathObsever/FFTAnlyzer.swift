@@ -20,14 +20,12 @@ extension FFTAnlyzer {
   public typealias FFTResult = (real: [Float], imaginary: [Float])
   
   public func performFFT(buffer: AVAudioPCMBuffer) -> FFTResult? {
-    guard let fftSetup = setupFFT() else {
-      return nil
-    }
+
     let bufferSize = Int(buffer.frameLength)
-    let fftLength = bufferSize / 2
+    let length = bufferSize / 2
     
-    var realBuffer = [Float](repeating: 0.0, count: fftLength)
-    var imaginaryBuffer = [Float](repeating: 0.0, count: fftLength)
+    var realBuffer = [Float](repeating: 0.0, count: length)
+    var imaginaryBuffer = [Float](repeating: 0.0, count: length)
     
     var splitComplex: DSPSplitComplex?
     //wrap the result inside a complex vector representation used in the vDSP framework
@@ -50,19 +48,24 @@ extension FFTAnlyzer {
     // Convert the audio buffer to a float array
     var audioBuffer = Array(UnsafeBufferPointer(start: floatBuffer[0], count: bufferSize))
     
-    // perform the FFT
-    audioBuffer.withUnsafeMutableBufferPointer { bufferPointer in
-      let vDSPLenth = vDSP_Length(log2f(Float(fftLength)))
-      vDSP_fft_zip(fftSetup, &splitComplex, 1, vDSPLenth, FFTDirection(FFT_FORWARD))
+    let fftLength = vDSP_Length(floor(log2(Float(length))))
+    guard let fftSetup = vDSP_create_fftsetup(fftLength, FFTRadix(kFFTRadix2)) else {
+      return nil
     }
     
-    cleanFFTSetup(fftSetup)
+    
+    // perform the FFT
+    audioBuffer.withUnsafeMutableBufferPointer { bufferPointer in
+      vDSP_fft_zip(fftSetup, &splitComplex, 1, fftLength, FFTDirection(FFT_FORWARD))
+    }
+    // clean
+    vDSP_destroy_fftsetup(fftSetup)
     
     // extract the result
     let realPart = splitComplex.realp
-    let real = Array(UnsafeBufferPointer(start: realPart, count: fftLength))
+    let real = Array(UnsafeBufferPointer(start: realPart, count: length))
     let imaginaryPart = splitComplex.imagp
-    let imaginary = Array(UnsafeBufferPointer(start: imaginaryPart, count: fftLength))
+    let imaginary = Array(UnsafeBufferPointer(start: imaginaryPart, count: length))
     
     return (real, imaginary)
   }
