@@ -2,9 +2,6 @@ import Accelerate
 import AVFAudio
 
 public class FFTAnlyzer: NSObject {
-  // MARK: variables for FFT analysis
-  var audioBuffer: [Float] = []
-  var normalizedData: [Float] = []
   var fftSetup: vDSP_DFT_Setup?
   var bufferSize: UInt32 = 1024
   
@@ -31,23 +28,6 @@ extension FFTAnlyzer {
     let bufferSize = Int(buffer.frameLength)
     
     
-  }
-}
-
-extension FFTAnlyzer {
-  public func appendAndAnalyze(audioPower power: Float, time: Int) {
-    // add value to buffer
-    audioBuffer.append(power)
-    
-    if audioBuffer.count >= time {
-      analyzeCurrentDataSet()
-      audioBuffer.removeFirst(441)  // remove the oldest 0.01 seconds of Data at sample rate 44100
-    }
-  }
-  
-  public func analyzeCurrentDataSet() {
-    normalizedData = normalizeData(audioBuffer)
-    analyzePeaks(normalizedData)
   }
 }
 
