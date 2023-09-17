@@ -156,10 +156,10 @@ extension BreathObsever {
           Task { [weak self] in
             self?.classifyAnalyzer?.analyze(buffer, atAudioFramePosition: time.sampleTime)
             
-//            if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
-//              print("🙆🏻 send fft subject result")
-//              self?.fftAnalysisSubject.send(fftResult)
-//            }
+            if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
+              print("🙆🏻 send fft subject result")
+              await self?.sendFFTResult(fftResult)
+            }
             
             // calculate and send power power
             await self?.sendAudioPower(from: buffer)
@@ -232,6 +232,11 @@ extension BreathObsever {
     
     let powerInDB = 10.0 * log10(power)
     powerSubject.send(powerInDB)
+  }
+  
+  @MainActor
+  internal func sendFFTResult(_ result: FFTAnlyzer.FFTResult) {
+    fftAnalysisSubject.send(result)
   }
 }
 
