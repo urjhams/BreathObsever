@@ -1,4 +1,5 @@
 import AVFAudio
+import SwiftUI
 import SoundAnalysis
 import Combine
 import Accelerate
@@ -187,7 +188,7 @@ extension BreathObsever {
     stopAudioSession()
   }
   
-  public func startProcess() {
+  public func startProcess() throws {
     stopProcess()
     
     // setup the sound analysis request
@@ -203,6 +204,7 @@ extension BreathObsever {
     } catch {
       print("❗️ \(error.localizedDescription)")
       stopProcess()
+      throw error
     }
   }
   
