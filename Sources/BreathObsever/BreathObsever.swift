@@ -42,9 +42,6 @@ public class BreathObsever: NSObject, ObservableObject {
   /// Audio engine for recording
   private var audioEngine: AVAudioEngine?
   
-  /// A dispatch queue to asynchronously perform analysis on.
-  private let analysisQueue = DispatchQueue(label: "com.breathObserver.AnalysisQueue")
-  
   /// An analyzer that performs sound classification.
   private var classifyAnalyzer: SNAudioStreamAnalyzer?
   
