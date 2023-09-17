@@ -10,7 +10,7 @@ public enum Breathing {
   init(from result: SNClassificationResult) {
     guard
       let breath = result.classification(forIdentifier: "breathing"),
-      breath.confidence > 0.0 // > 50 % confidence
+      breath.confidence > 0.0
     else {
       self = .none
       return
@@ -18,7 +18,7 @@ public enum Breathing {
     self = .breath(confidence: breath.confidence)
   }
   
-  var confidence: Int {
+  public var confidence: Int {
     switch self {
     case .breath(let value):
       return Int(value * 100)
@@ -32,12 +32,7 @@ public enum Breathing {
 public class BreathObsever: NSObject, ObservableObject {
   
   public enum ObserverError: Error {
-    case recorderNotAllocated
-    case notRecording
-    case noTimerAllocated
-    case noAvailableInput
     case noMicrophoneAccess
-    case audioStreamInterrupted
   }
   
   let sampleRate = 44100.0
@@ -45,7 +40,7 @@ public class BreathObsever: NSObject, ObservableObject {
   let audioSession: AVAudioSession
   
   /// Audio engine for recording
-  private let audioEngine: AVAudioEngine
+  private var audioEngine: AVAudioEngine?
   
   /// A dispatch queue to asynchronously perform analysis on.
   private let analysisQueue = DispatchQueue(label: "com.breathObserver.AnalysisQueue")
@@ -53,19 +48,22 @@ public class BreathObsever: NSObject, ObservableObject {
   /// An analyzer that performs sound classification.
   private var classifyAnalyzer: SNAudioStreamAnalyzer?
   
-  private var soundAnalysisSubject = PassthroughSubject<Breathing, Never>()
+  public var soundAnalysisSubject = PassthroughSubject<Breathing, Never>()
   
   private var soundAnalysisTempResult = [SNClassificationResult]()
-  
-  private var cancellables = Set<AnyCancellable>()
-    
+      
   let bufferSize: UInt32 = 4096
     
   internal lazy var fftAnalyzer = FFTAnlyzer(bufferSize: bufferSize)
   
-  private var fftAnalysisSubject = PassthroughSubject<FFTAnlyzer.FFTResult, Never>()
+  public var fftAnalysisSubject = PassthroughSubject<FFTAnlyzer.FFTResult, Never>()
   
-  private var powerSubject = PassthroughSubject<Float, Never>()
+  public var powerSubject = PassthroughSubject<Float, Never>()
+  
+  // TODO: need another subject to save ECG data
+  // may be we keep collecting ECG data and save to an array,
+  // when the the combineLatest receiveValue, we collect the data in array and empty it
+  // prepare the handle of the data
   
   /// Indicates the amount of audio, in seconds, that informs a prediction.
   var inferenceWindowSize = Double(1.5)
@@ -79,12 +77,7 @@ public class BreathObsever: NSObject, ObservableObject {
   var overlapFactor = Double(0.9)
       
   public override init() {
-    audioEngine = AVAudioEngine()
     audioSession = AVAudioSession.sharedInstance()
-  }
-  
-  deinit {
-    cancellables.removeAll()
   }
 }
 
@@ -123,7 +116,7 @@ extension BreathObsever {
     stopAudioSession()
     do {
       try audioSession.setCategory(.record, mode: .measurement, options: [.allowBluetooth])
-      try audioSession.setPreferredSampleRate(audioEngine.inputNode.outputFormat(forBus: 0).sampleRate)
+      try audioSession.setPreferredSampleRate(sampleRate)
       
       try audioSession.setActive(true)
     } catch {
@@ -133,51 +126,9 @@ extension BreathObsever {
   }
 }
 
-// MARK: - AudioSessionInteruptions
-extension BreathObsever {
-  /// Starts observing for audio recording interruptions.
-  private func startListeningForAudioSessionInterruptions() {
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleAudioSessionInterruption),
-      name: AVAudioSession.interruptionNotification,
-      object: nil
-    )
-    NotificationCenter.default.addObserver(
-      self,
-      selector: #selector(handleAudioSessionInterruption),
-      name: AVAudioSession.mediaServicesWereLostNotification,
-      object: nil
-    )
-  }
-  
-  /// Stops observing for audio recording interruptions.
-  private func stopListeningForAudioSessionInterruptions() {
-    NotificationCenter
-      .default
-      .removeObserver(self, name: AVAudioSession.interruptionNotification,object: nil)
-    NotificationCenter
-      .default
-      .removeObserver(self, name: AVAudioSession.mediaServicesWereLostNotification, object: nil)
-  }
-  
-  /// Handles notifications the system emits for audio interruptions.
-  ///
-  /// When an interruption occurs, the app notifies the subject of an error. The method terminates sound
-  /// classification, so restart it to resume classification.
-  ///
-  /// - Parameter notification: A notification the system emits that indicates an interruption.
-  @objc
-  private func handleAudioSessionInterruption(_ notification: Notification) {
-    stopProcess()
-  }
-}
-
 // MARK: - SoundsAnalysis
 extension BreathObsever {
-  
-  public typealias Config = (request: SNRequest, observer: SNResultsObserving)
-  
+    
   public func startAnalyzing(request: SNRequest) throws {
     stopAnalyzing()
     
@@ -185,43 +136,37 @@ extension BreathObsever {
       try startAudioSession()
       try ensureMicrophoneAccess()
       
-      let audioFormat = audioEngine.inputNode.outputFormat(forBus: 0)
+      // start the engine
+      // IMPORTARNT!!! must start the new engine here right before installTap
+      // to prevent error:
+      // reason: 'required condition is false: format.sampleRate == hwFormat.sampleRate.
+      let newEngine = AVAudioEngine()
+      audioEngine = newEngine
       
-      let classifyAnalyzer = SNAudioStreamAnalyzer(format: audioFormat)
-      self.classifyAnalyzer = classifyAnalyzer
+      let audioFormat = newEngine.inputNode.outputFormat(forBus: 0)
       
-      try classifyAnalyzer.add(request, withObserver: self)
+      classifyAnalyzer = SNAudioStreamAnalyzer(format: audioFormat)
+      
+      try classifyAnalyzer?.add(request, withObserver: self)
       
       // start to record
-      audioEngine
+      newEngine
         .inputNode
-        .installTap(onBus: 0, bufferSize: bufferSize, format: audioFormat) { [weak self] buffer, time in
-          self?.analysisQueue.async {
-            classifyAnalyzer.analyze(buffer, atAudioFramePosition: time.sampleTime)
+        .installTap(onBus: 0, bufferSize: bufferSize, format: audioFormat) { buffer, time in
+          Task { [weak self] in
+            self?.classifyAnalyzer?.analyze(buffer, atAudioFramePosition: time.sampleTime)
             
 //            if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
 //              print("🙆🏻 send fft subject result")
 //              self?.fftAnalysisSubject.send(fftResult)
 //            }
             
-            let samples = UnsafeBufferPointer(
-              start: buffer.floatChannelData?[0],
-              count: Int(buffer.frameLength)
-            )
-            var power: Float = 0.0
-            
-            for sample in samples {
-              power += sample * sample
-            }
-            
-            power /= Float(samples.count)
-            
-            let powerInDB = 10.0 * log10(power)
-            self?.powerSubject.send(powerInDB)
+            // calculate and send power power
+            await self?.sendAudioPower(from: buffer)
           }
         }
       
-      try audioEngine.start()
+      try newEngine.start()
     } catch {
       stopAnalyzing()
       throw error
@@ -234,11 +179,11 @@ extension BreathObsever {
         return
       }
       
-      audioEngine.stop()
-      audioEngine.inputNode.removeTap(onBus: 0)
+      audioEngine?.stop()
+      audioEngine?.inputNode.removeTap(onBus: 0)
+      audioEngine = nil
       
       classifyAnalyzer?.removeAllRequests()
-      
       classifyAnalyzer = nil
     }
     
@@ -247,24 +192,6 @@ extension BreathObsever {
   
   public func startProcess() {
     stopProcess()
-    
-    // TODO: need another subject to save ECG data
-    // may be we keep collecting ECG data and save to an array,
-    // when the the combineLatest receiveValue, we collect the data in array and empty it
-    // prepare the handle of the data
-    Publishers
-      .CombineLatest(soundAnalysisSubject, powerSubject)
-      .receive(on: DispatchQueue.main)
-      .sink { _ in
-        
-      } receiveValue: { breathing, power in
-        // TODO: handle the combine value of sound classfy result and fft result
-        DispatchQueue.main.async {
-          // breathing is in around between -85 to -60 (~64 when almost snooring, breathing loud)
-          print("🎉 power: \(Int(power)) db - breath: \(breathing.confidence)%")
-        }
-      }
-      .store(in: &cancellables)
     
     // setup the sound analysis request
     do {
@@ -275,7 +202,6 @@ extension BreathObsever {
       )
       request.overlapFactor = overlapFactor
       
-      startListeningForAudioSessionInterruptions()
       try startAnalyzing(request: request)
     } catch {
       print("❗️ \(error.localizedDescription)")
@@ -285,21 +211,38 @@ extension BreathObsever {
   
   public func stopProcess() {
     stopAnalyzing()
-    stopListeningForAudioSessionInterruptions()
   }
 }
 
+// MARK: - audio digital power recieved
+extension BreathObsever {
+  @MainActor
+  internal func sendAudioPower(from buffer: AVAudioPCMBuffer) {
+    let samples = UnsafeBufferPointer(
+      start: buffer.floatChannelData?[0],
+      count: Int(buffer.frameLength)
+    )
+    var power: Float = 0.0
+    
+    for sample in samples {
+      power += sample * sample
+    }
+    
+    power /= Float(samples.count)
+    
+    let powerInDB = 10.0 * log10(power)
+    powerSubject.send(powerInDB)
+  }
+}
 
+// MARK: - SNResultsObserving
 extension BreathObsever: SNResultsObserving {
   public func request(_ request: SNRequest, didProduce result: SNResult) {
     guard let result = result as? SNClassificationResult else {
       return
     }
-    soundAnalysisSubject.send(Breathing(from: result))
-  }
-  
-  public func requestDidComplete(_ request: SNRequest) {
-    // we can ignore this since we use a Never passthrough subject
-    soundAnalysisSubject.send(completion: .finished)
+    Task { @MainActor in
+      soundAnalysisSubject.send(Breathing(from: result))
+    }
   }
 }
