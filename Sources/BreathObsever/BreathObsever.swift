@@ -4,6 +4,7 @@ import SoundAnalysis
 import Combine
 import Accelerate
 
+// TODO: remove SoundAnalysis, now record sound, try to get breath frequency, normalize -> spectrogram
 public enum Breathing {
   case breath(confidence: Double)
   case none
