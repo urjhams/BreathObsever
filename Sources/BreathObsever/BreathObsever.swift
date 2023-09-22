@@ -155,7 +155,6 @@ extension BreathObsever {
             self?.classifyAnalyzer?.analyze(buffer, atAudioFramePosition: time.sampleTime)
             
             if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
-              print("🙆🏻 send fft subject result")
               await self?.sendFFTResult(fftResult)
             }
             
