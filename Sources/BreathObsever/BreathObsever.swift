@@ -1,35 +1,9 @@
-import AVFAudio
+import AVFoundation
 import SwiftUI
-import SoundAnalysis
 import Combine
 import Accelerate
 
 // TODO: remove SoundAnalysis, now record sound, try to get breath frequency, normalize -> spectrogram
-public enum Breathing {
-  case breath(confidence: Double)
-  case none
-  
-  init(from result: SNClassificationResult) {
-    guard
-      let breath = result.classification(forIdentifier: "breathing"),
-      breath.confidence > 0.0
-    else {
-      self = .none
-      return
-    }
-    self = .breath(confidence: breath.confidence)
-  }
-  
-  public var confidence: Int {
-    switch self {
-    case .breath(let value):
-      return Int(value * 100)
-    default:
-      return 0
-    }
-  }
-}
-
 
 public class BreathObsever: NSObject, ObservableObject {
   
@@ -43,14 +17,7 @@ public class BreathObsever: NSObject, ObservableObject {
   
   /// Audio engine for recording
   private var audioEngine: AVAudioEngine?
-  
-  /// An analyzer that performs sound classification.
-  private var classifyAnalyzer: SNAudioStreamAnalyzer?
-  
-  public var soundAnalysisSubject = PassthroughSubject<Breathing, Never>()
-  
-  private var soundAnalysisTempResult = [SNClassificationResult]()
-      
+          
   let bufferSize: UInt32 = 4096
     
   internal lazy var fftAnalyzer = FFTAnlyzer(bufferSize: bufferSize)
@@ -125,94 +92,6 @@ extension BreathObsever {
   }
 }
 
-// MARK: - SoundsAnalysis
-extension BreathObsever {
-    
-  public func startAnalyzing(request: SNRequest) throws {
-    stopAnalyzing()
-    
-    do {
-      try startAudioSession()
-      try ensureMicrophoneAccess()
-      
-      // start the engine
-      // IMPORTARNT!!! must start the new engine here right before installTap
-      // to prevent error:
-      // reason: 'required condition is false: format.sampleRate == hwFormat.sampleRate.
-      let newEngine = AVAudioEngine()
-      audioEngine = newEngine
-      
-      let audioFormat = newEngine.inputNode.outputFormat(forBus: 0)
-      
-      classifyAnalyzer = SNAudioStreamAnalyzer(format: audioFormat)
-      
-      try classifyAnalyzer?.add(request, withObserver: self)
-      
-      // start to record
-      newEngine
-        .inputNode
-        .installTap(onBus: 0, bufferSize: bufferSize, format: audioFormat) { buffer, time in
-          Task { [weak self] in
-            self?.classifyAnalyzer?.analyze(buffer, atAudioFramePosition: time.sampleTime)
-            
-            if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
-              await self?.sendFFTResult(fftResult)
-            }
-            
-            // calculate and send power power
-            await self?.sendAudioPower(from: buffer)
-          }
-        }
-      
-      try newEngine.start()
-    } catch {
-      stopAnalyzing()
-      throw error
-    }
-  }
-  
-  public func stopAnalyzing() {
-    autoreleasepool { [weak self] in
-      guard let self else {
-        return
-      }
-      
-      audioEngine?.stop()
-      audioEngine?.inputNode.removeTap(onBus: 0)
-      audioEngine = nil
-      
-      classifyAnalyzer?.removeAllRequests()
-      classifyAnalyzer = nil
-    }
-    
-    stopAudioSession()
-  }
-  
-  public func startProcess() throws {
-    stopProcess()
-    
-    // setup the sound analysis request
-    do {
-      let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
-      request.windowDuration = CMTimeMakeWithSeconds(
-        inferenceWindowSize,
-        preferredTimescale: 48_000
-      )
-      request.overlapFactor = overlapFactor
-      
-      try startAnalyzing(request: request)
-    } catch {
-      print("❗️ \(error.localizedDescription)")
-      stopProcess()
-      throw error
-    }
-  }
-  
-  public func stopProcess() {
-    stopAnalyzing()
-  }
-}
-
 // MARK: - audio digital power recieved
 extension BreathObsever {
   @MainActor
@@ -236,17 +115,5 @@ extension BreathObsever {
   @MainActor
   internal func sendFFTResult(_ result: FFTAnlyzer.FFTResult) {
     fftAnalysisSubject.send(result)
-  }
-}
-
-// MARK: - SNResultsObserving
-extension BreathObsever: SNResultsObserving {
-  public func request(_ request: SNRequest, didProduce result: SNResult) {
-    guard let result = result as? SNClassificationResult else {
-      return
-    }
-    Task { @MainActor in
-      soundAnalysisSubject.send(Breathing(from: result))
-    }
   }
 }
