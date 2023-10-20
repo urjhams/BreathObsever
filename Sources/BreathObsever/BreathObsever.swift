@@ -22,7 +22,8 @@ public class BreathObsever: NSObject, ObservableObject {
     
   internal lazy var fftAnalyzer = FFTAnlyzer(bufferSize: bufferSize)
   
-  public var fftAnalysisSubject = PassthroughSubject<FFTAnlyzer.FFTResult, Never>()
+//  public var fftAnalysisSubject = PassthroughSubject<FFTAnlyzer.FFTResult, Never>()
+  public var fftAnalysisSubject = PassthroughSubject<[Float], Never>()
   
   public var powerSubject = PassthroughSubject<Float, Never>()
   
@@ -96,7 +97,7 @@ extension BreathObsever {
   }
   
   @MainActor
-  internal func sendFFTResult(_ result: FFTAnlyzer.FFTResult) {
+  internal func sendFFTResult(_ result: [Float]) {
     fftAnalysisSubject.send(result)
   }
 }
@@ -126,8 +127,12 @@ extension BreathObsever {
       ) { buffer, time in
         Task { [weak self] in
                               
-          if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
-            await self?.sendFFTResult(fftResult)
+//          if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
+//            await self?.sendFFTResult(fftResult)
+//          }
+          
+          if let fftMagnitudes = self?.fftAnalyzer.performFFT(buffer) {
+            await self?.sendFFTResult(fftMagnitudes)
           }
           
           // calculate and send power power
