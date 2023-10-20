@@ -3,8 +3,6 @@ import SwiftUI
 import Combine
 import Accelerate
 
-// TODO: remove SoundAnalysis, now record sound, try to get breath frequency, normalize -> spectrogram
-
 public class BreathObsever: NSObject, ObservableObject {
   
   public enum ObserverError: Error {
