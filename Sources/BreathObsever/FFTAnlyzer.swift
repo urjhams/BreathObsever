@@ -86,7 +86,7 @@ extension FFTAnlyzer {
 
 // MARK: TRying FFT processs
 extension FFTAnlyzer {
-  public func performAnalyze(_ buffer: AVAudioPCMBuffer) {
+  public func performFFT(_ buffer: AVAudioPCMBuffer) -> [Float]? {
     let bufferSize = buffer.frameLength
     let log2n = UInt(round(log2(Double(bufferSize))))
     let bufferSizePOT = Int(1 << log2n)
@@ -111,7 +111,7 @@ extension FFTAnlyzer {
     }
     
     guard var splitComplex else {
-      return
+      return nil
     }
     
     let windowSize = bufferSizePOT
@@ -121,7 +121,7 @@ extension FFTAnlyzer {
     // Hann windowing to reduce the frequency leakage
     vDSP_hann_window(&window, vDSP_Length(windowSize), Int32(vDSP_HANN_NORM))
     guard let floatPointee = buffer.floatChannelData?.pointee else {
-      return
+      return nil
     }
     vDSP_vmul(floatPointee, 1, window, 1, &transferBuffer, 1, vDSP_Length(windowSize))
     
@@ -146,8 +146,8 @@ extension FFTAnlyzer {
       &normalizedMagnitudes, 1, vDSP_Length(length)
     )
     
-//    self.magnitudes = magnitudes
     vDSP_destroy_fftsetup(fftSetup)
+    return magnitudes
   }
 }
 
