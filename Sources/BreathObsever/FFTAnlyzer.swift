@@ -144,10 +144,10 @@ extension FFTAnlyzer {
   
   internal func normalizedData(from magnitudes: inout [Float], length: Int) -> [Float] {
     var normalizedMagnitudes = [Float](repeating: 0.0, count: length)
-    vDSP_vsmul(
-      magnitudes.map { sqrtf($0) }, 1, [2.0 / Float(length)],
-      &normalizedMagnitudes, 1, vDSP_Length(length)
-    )
+    let mapped = magnitudes.map { sqrtf($0) }
+    
+    // nomralize
+    vDSP_vsmul( mapped, 1, [2.0 / Float(length)], &normalizedMagnitudes, 1, vDSP_Length(length))
     
     return magnitudes
   }
