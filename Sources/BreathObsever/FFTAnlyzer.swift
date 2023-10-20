@@ -152,17 +152,6 @@ extension FFTAnlyzer {
     return magnitudes
   }
   
-  internal func normalizeData(_ data: [Float]) -> [Float] {
-    var normalizedData = data
-    let dataSize = vDSP_Length(data.count)
-    
-    normalizedData.withUnsafeMutableBufferPointer { buffer in
-      vDSP_vsmul(buffer.baseAddress!, 1, [2.0 / Float(dataSize)], buffer.baseAddress!, 1, dataSize)
-    }
-    
-    return normalizedData
-  }
-  
   func analyzePeaks(_ data: [Float], fftSetup: vDSP_DFT_Setup) {
     
     var realIn = [Float](repeating: 0, count: data.count)
