@@ -104,7 +104,7 @@ extension FFTAnlyzer {
       }
     }
     
-    guard var splitComplex else {
+    guard var splitComplex, let floatBuffer = buffer.floatChannelData else {
       return nil
     }
     
@@ -114,10 +114,7 @@ extension FFTAnlyzer {
     
     // Hann windowing to reduce the frequency leakage
     vDSP_hann_window(&window, vDSP_Length(windowSize), Int32(vDSP_HANN_NORM))
-    guard let floatPointee = buffer.floatChannelData?.pointee else {
-      return nil
-    }
-    vDSP_vmul(floatPointee, 1, window, 1, &transferBuffer, 1, vDSP_Length(windowSize))
+    vDSP_vmul(floatBuffer.pointee, 1, window, 1, &transferBuffer, 1, vDSP_Length(windowSize))
     
     // Transforming the [Float] buffer into a UnsafePointer<Float> object for the vDSP_ctoz method
     // And then pack the input into the complex buffer (output)
