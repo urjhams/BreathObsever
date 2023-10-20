@@ -18,14 +18,14 @@ public class BreathObsever: NSObject, ObservableObject {
   /// Audio engine for recording
   private var audioEngine: AVAudioEngine?
           
-  let bufferSize: UInt32 = 4096
-    
-  internal lazy var fftAnalyzer = FFTAnlyzer(bufferSize: bufferSize)
+  let bufferSize: UInt32 = 1024
   
-//  public var fftAnalysisSubject = PassthroughSubject<FFTAnlyzer.FFTResult, Never>()
-  public var fftAnalysisSubject = PassthroughSubject<[Float], Never>()
+  public var amplitudeSubject = PassthroughSubject<Float, Never>()
   
   public var powerSubject = PassthroughSubject<Float, Never>()
+  
+  /// Amplitude threshold for loudest breathing noise that we accept. All higher noise will be counted as this.
+  let threshold: Float = 0.08
   
   public override init() {
     audioSession = AVAudioSession.sharedInstance()
@@ -97,8 +97,19 @@ extension BreathObsever {
   }
   
   @MainActor
-  internal func sendFFTResult(_ result: [Float]) {
-    fftAnalysisSubject.send(result)
+  internal func processAmplitude(from buffer: AVAudioPCMBuffer) {
+    // Extract audio samples from the buffer
+    let bufferLength = UInt(buffer.frameLength)
+    let audioBuffer = UnsafeBufferPointer(
+      start: buffer.floatChannelData?[0],
+      count: Int(bufferLength)
+    )
+    
+    // Calculate the amplitude from the audio samples
+    let amplitude = audioBuffer.reduce(0.0) { max($0, abs($1)) }
+    
+    // Update the graph with the audio waveform
+    amplitudeSubject.send(amplitude <= threshold ? amplitude : threshold)
   }
 }
 
@@ -126,14 +137,8 @@ extension BreathObsever {
         format: audioFormat
       ) { buffer, time in
         Task { [weak self] in
-                              
-//          if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
-//            await self?.sendFFTResult(fftResult)
-//          }
           
-          if let fftMagnitudes = self?.fftAnalyzer.performFFT(buffer) {
-            await self?.sendFFTResult(fftMagnitudes)
-          }
+          await self?.processAmplitude(from: buffer)
           
           // calculate and send power power
           await self?.sendAudioPower(from: buffer)
