@@ -26,17 +26,6 @@ public class BreathObsever: NSObject, ObservableObject {
   
   public var powerSubject = PassthroughSubject<Float, Never>()
   
-  /// Indicates the amount of audio, in seconds, that informs a prediction.
-  var inferenceWindowSize = Double(1.5)
-  
-  /// The amount of overlap between consecutive analysis windows.
-  ///
-  /// The system performs sound classification on a window-by-window basis. The system divides an
-  /// audio stream into windows, and assigns labels and confidence values. This value determines how
-  /// much two consecutive windows overlap. For example, 0.9 means that each window shares 90% of
-  /// the audio that the previous window uses.
-  var overlapFactor = Double(0.9)
-      
   public override init() {
     audioSession = AVAudioSession.sharedInstance()
   }
