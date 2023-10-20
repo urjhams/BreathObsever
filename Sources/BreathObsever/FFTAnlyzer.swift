@@ -82,10 +82,7 @@ extension FFTAnlyzer {
     
     return (real, imaginary)
   }
-}
 
-// MARK: TRying FFT processs
-extension FFTAnlyzer {
   public func performFFT(_ buffer: AVAudioPCMBuffer) -> [Float]? {
     let bufferSize = buffer.frameLength
     let log2n = UInt(round(log2(Double(bufferSize))))
