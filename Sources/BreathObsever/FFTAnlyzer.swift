@@ -95,15 +95,12 @@ extension FFTAnlyzer {
         
     var splitComplex: DSPSplitComplex?
     //wrap the result inside a complex vector representation used in the vDSP framework
-    realBuffer.withUnsafeMutableBufferPointer { real in
-      imaginaryBuffer.withUnsafeMutableBufferPointer { imaginary in
-        guard
-          let realOutAddress = real.baseAddress,
-          let imagOutAddress = imaginary.baseAddress
-        else {
+    realBuffer.withUnsafeMutableBufferPointer { realPointer in
+      imaginaryBuffer.withUnsafeMutableBufferPointer { imagPointer in
+        guard let real = realPointer.baseAddress, let imag = imagPointer.baseAddress else {
           return
         }
-        splitComplex = DSPSplitComplex(realp: realOutAddress, imagp: imagOutAddress)
+        splitComplex = DSPSplitComplex(realp: real, imagp: imag)
       }
     }
     
