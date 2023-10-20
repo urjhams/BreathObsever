@@ -16,6 +16,20 @@ public class FFTAnlyzer: NSObject {
   
 }
 
+// MARK: - FFT Analyze setup
+extension FFTAnlyzer {
+  
+  internal func setupFFT() -> vDSP_DFT_Setup? {
+    let length = vDSP_Length(bufferSize)
+    return vDSP_create_fftsetup(length, Int32(kFFTRadix2))
+  }
+  
+  internal func cleanFFTSetup(_ fftSetup: FFTSetup) {
+    vDSP_destroy_fftsetup(fftSetup)
+  }
+}
+
+// MARK: - FFT result
 extension FFTAnlyzer {
   public typealias FFTResult = (real: [Float], imaginary: [Float])
   
@@ -24,7 +38,7 @@ extension FFTAnlyzer {
     let bufferSize = Int(buffer.frameLength)
     let length = bufferSize / 2
     
-    var realBuffer = [Float](repeating: 0.0, count: length)
+    var realBuffer      = [Float](repeating: 0.0, count: length)
     var imaginaryBuffer = [Float](repeating: 0.0, count: length)
     
     var splitComplex: DSPSplitComplex?
@@ -37,7 +51,7 @@ extension FFTAnlyzer {
         else {
           return
         }
-        splitComplex = .init(realp: realOutAddress, imagp: imagOutAddress)
+        splitComplex = DSPSplitComplex(realp: realOutAddress, imagp: imagOutAddress)
       }
     }
     
@@ -52,7 +66,6 @@ extension FFTAnlyzer {
     guard let fftSetup = vDSP_create_fftsetup(fftLength, FFTRadix(kFFTRadix2)) else {
       return nil
     }
-    
     
     // perform the FFT
     audioBuffer.withUnsafeMutableBufferPointer { bufferPointer in
@@ -71,15 +84,69 @@ extension FFTAnlyzer {
   }
 }
 
-// MARK: - FFT Analyze setup
+// MARK: TRying FFT processs
 extension FFTAnlyzer {
-  
-  internal func setupFFT() -> vDSP_DFT_Setup? {
-    let length = vDSP_Length(bufferSize)
-    return vDSP_create_fftsetup(length, Int32(kFFTRadix2))
-  }
-  
-  internal func cleanFFTSetup(_ fftSetup: FFTSetup) {
+  public func performAnalyze(_ buffer: AVAudioPCMBuffer) {
+    let bufferSize = buffer.frameLength
+    let log2n = UInt(round(log2(Double(bufferSize))))
+    let bufferSizePOT = Int(1 << log2n)
+    let length = bufferSizePOT / 2
+    let fftSetup = vDSP_create_fftsetup(log2n, Int32(kFFTRadix2))
+    
+    var realBuffer = [Float](repeating: 0, count: length)
+    var imaginaryBuffer = [Float](repeating: 0, count: length)
+        
+    var splitComplex: DSPSplitComplex?
+    //wrap the result inside a complex vector representation used in the vDSP framework
+    realBuffer.withUnsafeMutableBufferPointer { real in
+      imaginaryBuffer.withUnsafeMutableBufferPointer { imaginary in
+        guard
+          let realOutAddress = real.baseAddress,
+          let imagOutAddress = imaginary.baseAddress
+        else {
+          return
+        }
+        splitComplex = DSPSplitComplex(realp: realOutAddress, imagp: imagOutAddress)
+      }
+    }
+    
+    guard var splitComplex else {
+      return
+    }
+    
+    let windowSize = bufferSizePOT
+    var transferBuffer = [Float](repeating: 0, count: windowSize)
+    var window = [Float](repeating: 0, count: windowSize)
+    
+    // Hann windowing to reduce the frequency leakage
+    vDSP_hann_window(&window, vDSP_Length(windowSize), Int32(vDSP_HANN_NORM))
+    guard let floatPointee = buffer.floatChannelData?.pointee else {
+      return
+    }
+    vDSP_vmul(floatPointee, 1, window, 1, &transferBuffer, 1, vDSP_Length(windowSize))
+    
+    // Transforming the [Float] buffer into a UnsafePointer<Float> object for the vDSP_ctoz method
+    // And then pack the input into the complex buffer (output)
+    withUnsafePointer(to: transferBuffer) { pointer in
+      pointer.withMemoryRebound(to: DSPComplex.self, capacity: transferBuffer.count) {
+        vDSP_ctoz($0, 2, &splitComplex, 1, vDSP_Length(length))
+      }
+    }
+    
+    // Perform the FFT
+    vDSP_fft_zrip(fftSetup!, &splitComplex, 1, log2n, FFTDirection(FFT_FORWARD))
+    
+    var magnitudes = [Float](repeating: 0.0, count: length)
+    vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(length))
+    
+    // Normalising
+    var normalizedMagnitudes = [Float](repeating: 0.0, count: length)
+    vDSP_vsmul(
+      magnitudes.map { sqrtf($0) }, 1, [2.0 / Float(length)],
+      &normalizedMagnitudes, 1, vDSP_Length(length)
+    )
+    
+//    self.magnitudes = magnitudes
     vDSP_destroy_fftsetup(fftSetup)
   }
 }

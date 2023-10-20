@@ -125,7 +125,7 @@ extension BreathObsever {
         format: audioFormat
       ) { buffer, time in
         Task { [weak self] in
-          
+                              
           if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
             await self?.sendFFTResult(fftResult)
           }
