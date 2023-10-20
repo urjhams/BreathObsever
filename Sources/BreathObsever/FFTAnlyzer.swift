@@ -143,11 +143,17 @@ extension FFTAnlyzer {
 extension FFTAnlyzer {
   
   internal func normalizedData(from magnitudes: inout [Float], length: Int) -> [Float] {
-    var normalizedMagnitudes = [Float](repeating: 0.0, count: length)
-    let mapped = magnitudes.map { sqrtf($0) }
+    var normalized = [Float](repeating: 0.0, count: length)
     
-    // nomralize
-    vDSP_vsmul( mapped, 1, [2.0 / Float(length)], &normalizedMagnitudes, 1, vDSP_Length(length))
+    func sqrtq(_ magnitudes: [Float]) -> [Float] {
+      var results = [Float](repeating: 0.0, count: magnitudes.count)
+      vvsqrtf(&results, magnitudes, [Int32(magnitudes.count)])
+      
+      return results
+    }
+        
+    // nomralizing
+    vDSP_vsmul(sqrtq(magnitudes), 1, [2.0 / Float(length)], &normalized, 1, vDSP_Length(length))
     
     return magnitudes
   }
