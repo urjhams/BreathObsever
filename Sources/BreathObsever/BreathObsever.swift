@@ -26,11 +26,6 @@ public class BreathObsever: NSObject, ObservableObject {
   
   public var powerSubject = PassthroughSubject<Float, Never>()
   
-  // TODO: need another subject to save ECG data
-  // may be we keep collecting ECG data and save to an array,
-  // when the the combineLatest receiveValue, we collect the data in array and empty it
-  // prepare the handle of the data
-  
   /// Indicates the amount of audio, in seconds, that informs a prediction.
   var inferenceWindowSize = Double(1.5)
   
@@ -83,7 +78,6 @@ extension BreathObsever {
     do {
       try audioSession.setCategory(.record, mode: .measurement, options: [.allowBluetooth])
       try audioSession.setPreferredSampleRate(sampleRate)
-      
       try audioSession.setActive(true)
     } catch {
       stopAudioSession()
@@ -115,5 +109,62 @@ extension BreathObsever {
   @MainActor
   internal func sendFFTResult(_ result: FFTAnlyzer.FFTResult) {
     fftAnalysisSubject.send(result)
+  }
+}
+
+extension BreathObsever {
+  public func startAnalyzing() throws {
+    stopAnalyzing()
+    
+    do {
+      try startAudioSession()
+      try ensureMicrophoneAccess()
+      
+      // start the engine
+      // IMPORTARNT!!! must start the new engine here right before installTap
+      // to prevent error:
+      // reason: 'required condition is false: format.sampleRate == hwFormat.sampleRate.
+      let newEngine = AVAudioEngine()
+      audioEngine = newEngine
+      
+      let audioFormat = newEngine.inputNode.inputFormat(forBus: 0)
+      
+      // start to record
+      newEngine.inputNode.installTap(
+        onBus: 0,
+        bufferSize: bufferSize,
+        format: audioFormat
+      ) { buffer, time in
+        Task { [weak self] in
+          
+          if let fftResult = self?.fftAnalyzer.performFFT(buffer: buffer) {
+            await self?.sendFFTResult(fftResult)
+          }
+          
+          // calculate and send power power
+          await self?.sendAudioPower(from: buffer)
+        }
+      }
+      
+      try newEngine.start()
+    } catch {
+      stopAnalyzing()
+      throw error
+    }
+  }
+  
+  public func stopAnalyzing() {
+    autoreleasepool { [weak self] in
+      guard let self else {
+        return
+      }
+      
+      audioEngine?.stop()
+      audioEngine?.inputNode.removeTap(onBus: 0)
+      audioEngine = nil
+
+    }
+    
+    stopAudioSession()
   }
 }
