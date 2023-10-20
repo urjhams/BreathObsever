@@ -29,7 +29,7 @@ extension FFTAnlyzer {
   }
 }
 
-// MARK: - FFT result
+// MARK: - FFT perform
 extension FFTAnlyzer {
 //  public typealias FFTResult = (real: [Float], imaginary: [Float])
 //  
