@@ -130,20 +130,27 @@ extension FFTAnlyzer {
     var magnitudes = [Float](repeating: 0.0, count: length)
     vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(length))
     
-    // Normalising
-    var normalizedMagnitudes = [Float](repeating: 0.0, count: length)
-    vDSP_vsmul(
-      magnitudes.map { sqrtf($0) }, 1, [2.0 / Float(length)],
-      &normalizedMagnitudes, 1, vDSP_Length(length)
-    )
+    // Normalizing
+    magnitudes = normalizedData(from: &magnitudes, length: length)
     
     vDSP_destroy_fftsetup(fftSetup)
+    
     return magnitudes
   }
 }
 
 // MARK: - Peaks (fftSetup = vDSP_DFT_zop_CreateSetup(nil, length, .FORWARD) in setupFFT() instead)
 extension FFTAnlyzer {
+  
+  internal func normalizedData(from magnitudes: inout [Float], length: Int) -> [Float] {
+    var normalizedMagnitudes = [Float](repeating: 0.0, count: length)
+    vDSP_vsmul(
+      magnitudes.map { sqrtf($0) }, 1, [2.0 / Float(length)],
+      &normalizedMagnitudes, 1, vDSP_Length(length)
+    )
+    
+    return magnitudes
+  }
   
   internal func normalizeData(_ data: [Float]) -> [Float] {
     var normalizedData = data
