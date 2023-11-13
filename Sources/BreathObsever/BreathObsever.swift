@@ -7,11 +7,14 @@ public class BreathObsever: NSObject, ObservableObject {
   
   public enum ObserverError: Error {
     case noMicrophoneAccess
+    case noCaptureDevice
+    case cannotAddInput
+    case cannotAddOutput
   }
   
   let sampleRate = 44100.0
 
-  let audioSession: AVAudioSession
+  var session: AVCaptureSession?
   
   /// Audio engine for recording
   private var audioEngine: AVAudioEngine?
@@ -26,7 +29,6 @@ public class BreathObsever: NSObject, ObservableObject {
   let threshold: Float = 0.08
   
   public override init() {
-    audioSession = AVAudioSession.sharedInstance()
   }
 }
 
@@ -57,21 +59,60 @@ extension BreathObsever {
   
   private func stopAudioSession() {
     autoreleasepool { [weak self] in
-      try? self?.audioSession.setActive(false)
+      self?.session?.stopRunning()
     }
   }
   
   private func startAudioSession() throws {
     stopAudioSession()
+    let audioSettings: [String : Any] = [
+      AVFormatIDKey           : kAudioFormatLinearPCM,
+      AVNumberOfChannelsKey   : 1,
+      AVSampleRateKey         : sampleRate
+    ]
+    let queue = DispatchQueue(label: "AudioSessionQueue")
+    let device = AVCaptureDevice.default(for: .audio)
+    guard let device else {
+      throw ObserverError.noCaptureDevice
+    }
+    
     do {
-      try audioSession.setCategory(.record, mode: .measurement, options: [.allowBluetooth])
-      try audioSession.setPreferredSampleRate(sampleRate)
-      try audioSession.setActive(true)
+      try ensureMicrophoneAccess()
+      session = AVCaptureSession()
+      
+      let input = try AVCaptureDeviceInput(device: device)
+      let output = AVCaptureAudioDataOutput()
+      
+      output.setSampleBufferDelegate(self, queue: queue)
+      output.audioSettings = audioSettings
+      session?.beginConfiguration()
+      try addInput(session, input: input)
+      try addOutput(session, output: output)
+      session?.commitConfiguration()
+      session?.startRunning()
     } catch {
       stopAudioSession()
       throw error
     }
   }
+  
+  private func addInput(_ session: AVCaptureSession?, input: AVCaptureDeviceInput) throws {
+    guard let session, session.canAddInput(input) else {
+      throw ObserverError.cannotAddInput
+    }
+    session.addInput(input)
+  }
+  
+  private func addOutput(_ session: AVCaptureSession?, output: AVCaptureAudioDataOutput) throws {
+    guard let session, session.canAddOutput(output) else {
+      throw ObserverError.cannotAddOutput
+    }
+    session.addOutput(output)
+  }
+}
+
+extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
+  
 }
 
 // MARK: - audio digital power recieved
