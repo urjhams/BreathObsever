@@ -71,8 +71,14 @@ extension BreathObsever {
       AVSampleRateKey         : sampleRate
     ]
     let queue = DispatchQueue(label: "AudioSessionQueue")
-    let device = AVCaptureDevice.default(for: .audio)
-    guard let device else {
+    let microphone: AVCaptureDevice?
+    if #available(macOS 14.0, *) {
+      microphone = AVCaptureDevice.default(.microphone, for: .audio, position: .unspecified)
+    } else {
+      // Fallback on earlier versions
+      microphone = AVCaptureDevice.default(for: .audio)
+    }
+    guard let microphone else {
       throw ObserverError.noCaptureDevice
     }
     
@@ -80,7 +86,7 @@ extension BreathObsever {
       try ensureMicrophoneAccess()
       session = AVCaptureSession()
       
-      let input = try AVCaptureDeviceInput(device: device)
+      let input = try AVCaptureDeviceInput(device: microphone)
       let output = AVCaptureAudioDataOutput()
       
       output.setSampleBufferDelegate(self, queue: queue)
