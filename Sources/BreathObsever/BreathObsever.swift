@@ -13,6 +13,13 @@ public class BreathObsever: NSObject, ObservableObject {
   }
   
   let sampleRate = 44100.0
+  
+  // The bandpass filter to remove noise that higher than 1000 Hz and lower than 10 Hz
+  lazy var bandpassFilter = BandPassFilter(
+    sampleRate: sampleRate,
+    frequencyLow: 10,
+    frequencyHigh: 1000
+  )
 
   var session: AVCaptureSession?
   
@@ -180,13 +187,20 @@ extension BreathObsever {
         onBus: 0,
         bufferSize: bufferSize,
         format: audioFormat
-      ) { buffer, time in
+      ) { [weak self] buffer, time in
+        
+        guard let self else {
+          return
+        }
+        
+        let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
+        
         Task { [weak self] in
           
-          await self?.processAmplitude(from: buffer)
+          await self?.processAmplitude(from: filteredBuffer ?? buffer)
           
           // calculate and send power power
-          await self?.sendAudioPower(from: buffer)
+          await self?.sendAudioPower(from: filteredBuffer ?? buffer)
         }
       }
       
@@ -210,5 +224,62 @@ extension BreathObsever {
     }
     
     stopAudioSession()
+  }
+}
+
+fileprivate extension BreathObsever {
+  func applyBandPassFilter(
+    inputBuffer: AVAudioPCMBuffer,
+    filter: BandPassFilter
+  ) -> AVAudioPCMBuffer? {
+    guard
+      let inputInt16ChannelData = inputBuffer.int16ChannelData,
+      let outputBuffer = AVAudioPCMBuffer(
+        pcmFormat: inputBuffer.format,
+        frameCapacity: inputBuffer.frameLength
+      ) 
+    else {
+      return nil
+    }
+    
+    guard let outputInt16ChannelData = outputBuffer.int16ChannelData else {
+      return nil
+    }
+    
+    guard let biquad = vDSP.Biquad(
+      coefficients: [filter.b0, filter.b1, filter.b2, filter.a1, filter.a2],
+      channelCount: 1,
+      sectionCount: 1,
+      ofType: Float.self
+    ) else {
+      return nil
+    }
+    var filters = [vDSP.Biquad](repeating: biquad, count: 1)
+    
+    for channel in 0..<Int(inputBuffer.format.channelCount) {
+      let p1: UnsafeMutablePointer<Int16> = inputInt16ChannelData[channel]
+      let p2: UnsafeMutablePointer<Int16> = outputInt16ChannelData[channel]
+      
+      var signal = [Float](repeating: 0.0, count: Int(inputBuffer.frameLength))
+      
+      for i in 0..<Int(inputBuffer.frameLength) {
+        signal[i] = Float(p1[i]) / 32767.0
+      }
+      
+      signal = filters[0].apply(input: signal)
+      
+      for i in 0..<Int(inputBuffer.frameLength) {
+        if signal[i] < -1.0 {
+          p2[i] = -32767
+        } else if signal[i] > 1.0 {
+          p2[i] = 32767
+        } else {
+          p2[i] = Int16(Int(signal[i] * 32767))
+        }
+      }
+    }
+    
+    outputBuffer.frameLength = inputBuffer.frameLength
+    return outputBuffer
   }
 }
