@@ -12,24 +12,28 @@ public class BreathObsever: NSObject, ObservableObject {
     case cannotAddOutput
   }
   
+  /// The sample rate (44,1 Khz)
   let sampleRate = 44100.0
   
-  // The bandpass filter to remove noise that higher than 1000 Hz and lower than 10 Hz
+  /// The bandpass filter to remove noise that higher than 1000 Hz and lower than 10 Hz
   lazy var bandpassFilter = BandPassFilter(
     sampleRate: sampleRate,
     frequencyLow: 10,
     frequencyHigh: 1000
   )
-
+  
   var session: AVCaptureSession?
   
   /// Audio engine for recording
   private var audioEngine: AVAudioEngine?
-          
+  
+  /// audio sample buffer size
   let bufferSize: UInt32 = 1024
   
+  /// The subject that recieves the latest data of audio amplitude
   public var amplitudeSubject = PassthroughSubject<Float, Never>()
   
+  /// The sujbect that recieves the latest data of audio power in decibel
   public var powerSubject = PassthroughSubject<Float, Never>()
   
   /// Amplitude threshold for loudest breathing noise that we accept. All higher noise will be counted as this.
