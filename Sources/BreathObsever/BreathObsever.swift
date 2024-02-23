@@ -228,57 +228,70 @@ extension BreathObsever {
 }
 
 fileprivate extension BreathObsever {
+  /// Applies a bandpass filter to an AVAudioPCMBuffer.
+  ///
+  /// - Parameters:
+  ///   - inputBuffer: The input audio buffer to be filtered.
+  ///   - filter: The bandpass filter parameters.
+  /// - Returns: The filtered output audio buffer, or nil if an error occurs.
   func applyBandPassFilter(
     inputBuffer: AVAudioPCMBuffer,
     filter: BandPassFilter
   ) -> AVAudioPCMBuffer? {
-    guard
-      let inputInt16ChannelData = inputBuffer.int16ChannelData,
+    // Ensure input buffer has float channel data and create output buffer
+    guard 
+      let inputFloatChannelData = inputBuffer.floatChannelData,
       let outputBuffer = AVAudioPCMBuffer(
         pcmFormat: inputBuffer.format,
         frameCapacity: inputBuffer.frameLength
-      ) 
+      )
     else {
       return nil
     }
-    
-    guard let outputInt16ChannelData = outputBuffer.int16ChannelData else {
+    guard let outputFloatChannelData = outputBuffer.floatChannelData else {
       return nil
     }
     
-    guard let biquad = vDSP.Biquad(
-      coefficients: [filter.b0, filter.b1, filter.b2, filter.a1, filter.a2],
-      channelCount: 1,
-      sectionCount: 1,
-      ofType: Float.self
-    ) else {
-      return nil
-    }
-    var filters = [vDSP.Biquad](repeating: biquad, count: 1)
+    // Extract necessary properties from input buffer
+    let channelCount = Int(inputBuffer.format.channelCount)
+    let frameLength = Int(inputBuffer.frameLength)
     
-    for channel in 0..<Int(inputBuffer.format.channelCount) {
-      let p1: UnsafeMutablePointer<Int16> = inputInt16ChannelData[channel]
-      let p2: UnsafeMutablePointer<Int16> = outputInt16ChannelData[channel]
+    // Apply bandpass filter to each channel
+    for channel in 0..<channelCount {
+      let inputChannelData = inputFloatChannelData[channel]
+      let outputChannelData = outputFloatChannelData[channel]
       
-      var signal = [Float](repeating: 0.0, count: Int(inputBuffer.frameLength))
+      // Initialize filter for current channel
+      guard let biquad = vDSP.Biquad(
+        coefficients: [filter.b0, filter.b1, filter.b2, filter.a1, filter.a2],
+        channelCount: 1,
+        sectionCount: 1,
+        ofType: Float.self
+      ) else {
+        return nil
+      }
+      var filters = [vDSP.Biquad](repeating: biquad, count: 1)
       
-      for i in 0..<Int(inputBuffer.frameLength) {
-        signal[i] = Float(p1[i]) / 32767.0
+      // Convert input samples to Float and apply the filter
+      var signal = [Float](unsafeUninitializedCapacity: frameLength) { buffer, count in
+        inputChannelData.withMemoryRebound(to: Float.self, capacity: frameLength) { ptr in
+          for i in 0..<frameLength {
+            buffer[i] = ptr[i] / 32767.0 // Normalize input samples to range [-1, 1]
+          }
+          count = frameLength
+        }
       }
       
       signal = filters[0].apply(input: signal)
       
-      for i in 0..<Int(inputBuffer.frameLength) {
-        if signal[i] < -1.0 {
-          p2[i] = -32767
-        } else if signal[i] > 1.0 {
-          p2[i] = 32767
-        } else {
-          p2[i] = Int16(Int(signal[i] * 32767))
-        }
+      // Scale filtered signal and store in output buffer
+      for i in 0..<frameLength {
+        let scaledValue = signal[i] * 32767.0 // Scale back to Int16 range
+        outputChannelData[i] = max(-32767.0, min(32767.0, scaledValue)) // Clamp values to Int16 range
       }
     }
     
+    // Set the frame length of the output buffer and return it
     outputBuffer.frameLength = inputBuffer.frameLength
     return outputBuffer
   }
