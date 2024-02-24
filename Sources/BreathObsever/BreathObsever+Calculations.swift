@@ -79,8 +79,7 @@ extension BreathObsever {
     let bufferSizePOT = Int(1 << log2n)
     let length = bufferSizePOT / 2
     
-    var splitComplex: DSPSplitComplex
-    var signalComplex = [DSPComplex](repeating: DSPComplex(), count: length)
+    var splitComplex: DSPSplitComplex?
     
     // Prepare input signal for FFT
     var realBuffer = inputSignal
@@ -100,9 +99,14 @@ extension BreathObsever {
     }
     
     // Perform FFT
-    let fftSetup = vDSP_create_fftsetup(log2n, Int32(kFFTRadix2))
+    guard
+      var splitComplex,
+      let fftSetup = vDSP_create_fftsetup(log2n, Int32(kFFTRadix2))
+    else {
+      return nil
+    }
 
-    vDSP_fft_zrip(fftSetup!, &splitComplex, 1, log2n, FFTDirection(FFT_FORWARD))
+    vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(FFT_FORWARD))
     
     // Compute magnitude of the FFT result
     var magnitudes = [Float](repeating: 0.0, count: length)
