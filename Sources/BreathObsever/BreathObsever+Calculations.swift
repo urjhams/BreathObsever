@@ -71,6 +71,74 @@ extension BreathObsever {
   }
 }
 
+extension BreathObsever {
+  // Function to perform Hilbert transform
+  func hilbertTransform(inputSignal input: [Float]) -> [Float] {
+    var hilbert = [Float](repeating: 0.0, count: input.count)
+    var fftSetup = vDSP_create_fftsetup(vDSP_Length(log2(Float(input.count))), FFTRadix(kFFTRadix2))
+    
+    input.withUnsafeBufferPointer { bufferPointer in
+      var splitComplexInput = DSPSplitComplex(realp: UnsafeMutablePointer(mutating: bufferPointer.baseAddress!),
+                                              imagp: UnsafeMutablePointer(mutating: [Float](repeating: 0.0, count: input.count)))
+      hilbert.withUnsafeMutableBufferPointer { resultPointer in
+        var splitComplexResult = DSPSplitComplex(realp: resultPointer.baseAddress!,
+                                                 imagp: UnsafeMutablePointer(mutating: [Float](repeating: 0.0, count: input.count)))
+        
+        vDSP_ctoz(&splitComplexInput, 2, &splitComplexResult, 1, vDSP_Length(input.count / 2))
+        
+        vDSP_fft_zrip(fftSetup!, &splitComplexResult, 1, vDSP_Length(log2(Float(input.count))), FFTDirection(FFT_FORWARD))
+        
+        let nyquist = vDSP_Length(input.count / 2)
+        splitComplexResult.imagp[0] = 0.0
+        splitComplexResult.realp[nyquist] = 0.0
+        
+        vDSP_fft_zrip(fftSetup!, &splitComplexResult, 1, vDSP_Length(log2(Float(input.count))), FFTDirection(FFT_INVERSE))
+        vDSP_zvmags(&splitComplexResult, 1, &hilbert, 1, vDSP_Length(input.count))
+      }
+    }
+    
+    vDSP_destroy_fftsetup(fftSetup)
+    return hilbert
+  }
+  
+  // Function to downsample signal to target sample rate
+  func downsampleSignal(signal: [Float], originalSampleRate: Double, targetSampleRate: Double) -> [Float] {
+    let downsampleFactor = Int(round(originalSampleRate / targetSampleRate))
+    let downsampledLength = signal.count / downsampleFactor
+    
+    var downsampledSignal = [Float](repeating: 0.0, count: downsampledLength)
+    
+    // Downsample signal
+    vDSP_desamp(signal, vDSP_Stride(downsampleFactor), [Float](repeating: 0.0, count: downsampledLength), &downsampledSignal, vDSP_Length(downsampledLength), vDSP_Length(downsampleFactor))
+    
+    return downsampledSignal
+  }
+  
+  // Function to apply Welch method and estimate respiratory rate
+  func welchMethod(signal: [Float]) -> Double {
+    let windowSize = vDSP_Length(signal.count)
+    
+    // Apply Hanning window
+    var window = [Float](repeating: 0.0, count: Int(windowSize))
+    vDSP_hann_window(&window, windowSize, Int32(vDSP_HANN_NORM))
+    
+    // Apply window to signal
+    var windowedSignal = [Float](repeating: 0.0, count: signal.count)
+    vDSP_vmul(signal, 1, window, 1, &windowedSignal, 1, windowSize)
+    
+    // Calculate power spectral density
+    var powerSpectralDensity = [Float](repeating: 0.0, count: signal.count / 2)
+    let powerSpectralDensityLength = vDSP_Length(signal.count / 2)
+    vDSP_fftqrv(windowedSignal, 1, &powerSpectralDensity, 1, powerSpectralDensityLength)
+    
+    // Estimate respiratory rate
+    let maxIndex = vDSP_Length(powerSpectralDensity.firstIndex(of: powerSpectralDensity.max()!)!)
+    let respiratoryRate = Double(maxIndex) * (originalSampleRate / Double(windowSize))
+    
+    return respiratoryRate
+  }
+}
+
 // MARK: - audio digital power recieved
 extension BreathObsever {
   @MainActor

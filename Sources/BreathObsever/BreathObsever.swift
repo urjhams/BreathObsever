@@ -178,11 +178,13 @@ extension BreathObsever {
           return
         }
         
-        let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
-        
-        if let filteredBuffer {
-          accumulatedBuffer.append(contentsOf: filteredBuffer.floatSamples)
+        guard 
+          let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
+        else {
+          return
         }
+        
+        accumulatedBuffer.append(contentsOf: filteredBuffer.floatSamples)
         
 //        Task { [weak self] in
                     
@@ -223,6 +225,19 @@ extension BreathObsever {
       return
     }
     
+    // Extract signal amplitude envelope using Hilbert transform
+    let amplitudeEnvelope = hilbertTransform(inputSignal: accumulatedBuffer)
     
+    // Downsample the envelope to 10 Hz
+    let downsampledEnvelope = downsampleSignal(signal: amplitudeEnvelope, originalSampleRate: 44100, targetSampleRate: 10)
+    
+    // Use Welch method to find peaks and estimate respiratory rate
+    let respiratoryRate = welchMethod(signal: downsampledEnvelope)
+    
+    // TODO: pass the rr here to maybe a passthrough subject
+    print("Estimated Respiratory Rate: \(respiratoryRate) breaths per minute")
+    
+    // Clear accumulated buffer
+    accumulatedBuffer.removeAll()
   }
 }
