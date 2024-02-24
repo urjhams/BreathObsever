@@ -1,4 +1,5 @@
 import Foundation
+import AVFoundation
 
 extension Collection {
   /// Returns the element at the specified index if it is within bounds, otherwise nil.
@@ -13,3 +14,13 @@ extension UnsafeMutablePointer where Pointee == Float {
   }
 }
 
+extension AVAudioPCMBuffer {
+  var floatSamples: [Float] {
+    let bufferLength = UInt(frameLength)
+    let bufferPointer = UnsafeBufferPointer(
+      start: floatChannelData?[0],
+      count: Int(bufferLength)
+    )
+    return Array(bufferPointer)
+  }
+}
