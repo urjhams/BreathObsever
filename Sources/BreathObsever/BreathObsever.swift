@@ -232,15 +232,19 @@ extension BreathObsever {
       return
     }
     
+    let downSampleRate: Double = 100
+    
     // Downsample the envelope to 100 Hz
     let downsampledEnvelope = downsampleSignal(
       signal: amplitudeEnvelope,
       originalSampleRate: sampleRate,
-      targetSampleRate: 100
+      targetSampleRate: downSampleRate
     )
     
+    let peaks = findPeaks(signal: downsampledEnvelope)
+    
     // Use Welch method to find peaks and estimate respiratory rate
-    let respiratoryRate = welchMethod(signal: downsampledEnvelope, originalSampleRate: sampleRate)
+    let respiratoryRate = calculateRespiratoryRate(peaks: peaks, sampleRate: Float(downSampleRate))
     
     // TODO: pass the rr here to maybe a passthrough subject
     print("Estimated Respiratory Rate: \(respiratoryRate) breaths per minute")

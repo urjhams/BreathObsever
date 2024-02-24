@@ -138,26 +138,28 @@ extension BreathObsever {
     return downsampledSignal
   }
   
-  // Function to apply Welch method and estimate respiratory rate
-  func welchMethod(signal: [Float], originalSampleRate: Double) -> Double {
-    let windowSize = vDSP_Length(signal.count)
+  func findPeaks(signal: [Float]) -> [Int] {
+    var peaks: [Int] = []
     
-    // Apply Hanning window
-    var window = [Float](repeating: 0.0, count: Int(windowSize))
-    vDSP_hann_window(&window, windowSize, Int32(vDSP_HANN_NORM))
+    for i in 1..<(signal.count - 1) {
+      if signal[i] > signal[i-1] && signal[i] > signal[i+1] {
+        peaks.append(i)
+      }
+    }
     
-    // Apply window to signal
-    var windowedSignal = [Float](repeating: 0.0, count: signal.count)
-    vDSP_vmul(signal, 1, window, 1, &windowedSignal, 1, windowSize)
+    return peaks
+  }
+  
+  func calculateRespiratoryRate(peaks: [Int], sampleRate: Float) -> Float {
+    var timeSum: Float = 0
     
-    // Calculate power spectral density
-    var powerSpectralDensity = [Float](repeating: 0.0, count: signal.count / 2)
-    let powerSpectralDensityLength = vDSP_Length(signal.count / 2)
-    vDSP_fftqrv(windowedSignal, 1, &powerSpectralDensity, 1, powerSpectralDensityLength)
+    for i in 1..<peaks.count {
+      let cycleDuration = Float(peaks[i] - peaks[i-1]) / sampleRate
+      timeSum += cycleDuration
+    }
     
-    // Estimate respiratory rate
-    let maxIndex = vDSP_Length(powerSpectralDensity.firstIndex(of: powerSpectralDensity.max()!)!)
-    let respiratoryRate = Double(maxIndex) * (originalSampleRate / Double(windowSize))
+    let averageCycleDuration = timeSum / Float(peaks.count - 1)
+    let respiratoryRate = 60 / averageCycleDuration
     
     return respiratoryRate
   }
