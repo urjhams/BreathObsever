@@ -78,21 +78,36 @@ extension BreathObsever {
     var fftSetup = vDSP_create_fftsetup(vDSP_Length(log2(Float(input.count))), FFTRadix(kFFTRadix2))
     
     input.withUnsafeBufferPointer { bufferPointer in
-      var splitComplexInput = DSPSplitComplex(realp: UnsafeMutablePointer(mutating: bufferPointer.baseAddress!),
-                                              imagp: UnsafeMutablePointer(mutating: [Float](repeating: 0.0, count: input.count)))
+      var splitComplexInput = DSPSplitComplex(
+        realp: UnsafeMutablePointer(mutating: bufferPointer.baseAddress!),
+        imagp: UnsafeMutablePointer(mutating: [Float](repeating: 0.0, count: input.count))
+      )
       hilbert.withUnsafeMutableBufferPointer { resultPointer in
-        var splitComplexResult = DSPSplitComplex(realp: resultPointer.baseAddress!,
-                                                 imagp: UnsafeMutablePointer(mutating: [Float](repeating: 0.0, count: input.count)))
+        var splitComplexResult = DSPSplitComplex(
+          realp: resultPointer.baseAddress!,
+          imagp: UnsafeMutablePointer(mutating: [Float](repeating: 0.0, count: input.count))
+        )
         
         vDSP_ctoz(&splitComplexInput, 2, &splitComplexResult, 1, vDSP_Length(input.count / 2))
         
-        vDSP_fft_zrip(fftSetup!, &splitComplexResult, 1, vDSP_Length(log2(Float(input.count))), FFTDirection(FFT_FORWARD))
+        vDSP_fft_zrip(
+          fftSetup!, 
+          &splitComplexResult,
+          1,
+          vDSP_Length(log2(Float(input.count))),
+          FFTDirection(FFT_FORWARD)
+        )
         
         let nyquist = vDSP_Length(input.count / 2)
         splitComplexResult.imagp[0] = 0.0
         splitComplexResult.realp[nyquist] = 0.0
         
-        vDSP_fft_zrip(fftSetup!, &splitComplexResult, 1, vDSP_Length(log2(Float(input.count))), FFTDirection(FFT_INVERSE))
+        vDSP_fft_zrip(
+          fftSetup!,
+          &splitComplexResult, 1,
+          vDSP_Length(log2(Float(input.count))),
+          FFTDirection(FFT_INVERSE)
+        )
         vDSP_zvmags(&splitComplexResult, 1, &hilbert, 1, vDSP_Length(input.count))
       }
     }
@@ -109,7 +124,13 @@ extension BreathObsever {
     var downsampledSignal = [Float](repeating: 0.0, count: downsampledLength)
     
     // Downsample signal
-    vDSP_desamp(signal, vDSP_Stride(downsampleFactor), [Float](repeating: 0.0, count: downsampledLength), &downsampledSignal, vDSP_Length(downsampledLength), vDSP_Length(downsampleFactor))
+    vDSP_desamp(
+      signal, 
+      vDSP_Stride(downsampleFactor),
+      [Float](repeating: 0.0, count: downsampledLength),
+      &downsampledSignal, vDSP_Length(downsampledLength),
+      vDSP_Length(downsampleFactor)
+    )
     
     return downsampledSignal
   }
