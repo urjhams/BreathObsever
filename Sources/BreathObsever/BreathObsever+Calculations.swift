@@ -73,47 +73,50 @@ extension BreathObsever {
 
 extension BreathObsever {
   // Function to perform Hilbert transform
-  func hilbertTransform(inputSignal input: [Float]) -> [Float] {
-    var hilbert = [Float](repeating: 0.0, count: input.count)
-    var fftSetup = vDSP_create_fftsetup(vDSP_Length(log2(Float(input.count))), FFTRadix(kFFTRadix2))
+  func hilbertTransform(inputSignal: [Float]) -> [Float]? {
+    let bufferSize = inputSignal.count
+    let log2n = UInt(round(log2(Double(bufferSize))))
+    let bufferSizePOT = Int(1 << log2n)
+    let length = bufferSizePOT / 2
     
-    input.withUnsafeBufferPointer { bufferPointer in
-      var splitComplexInput = DSPSplitComplex(
-        realp: UnsafeMutablePointer(mutating: bufferPointer.baseAddress!),
-        imagp: UnsafeMutablePointer(mutating: [Float](repeating: 0.0, count: input.count))
-      )
-      hilbert.withUnsafeMutableBufferPointer { resultPointer in
-        var splitComplexResult = DSPSplitComplex(
-          realp: resultPointer.baseAddress!,
-          imagp: UnsafeMutablePointer(mutating: [Float](repeating: 0.0, count: input.count))
-        )
-        
-        vDSP_ctoz(&splitComplexInput, 2, &splitComplexResult, 1, vDSP_Length(input.count / 2))
-        
-        vDSP_fft_zrip(
-          fftSetup!, 
-          &splitComplexResult,
-          1,
-          vDSP_Length(log2(Float(input.count))),
-          FFTDirection(FFT_FORWARD)
-        )
-        
-        let nyquist = vDSP_Length(input.count / 2)
-        splitComplexResult.imagp[0] = 0.0
-        splitComplexResult.realp[nyquist] = 0.0
-        
-        vDSP_fft_zrip(
-          fftSetup!,
-          &splitComplexResult, 1,
-          vDSP_Length(log2(Float(input.count))),
-          FFTDirection(FFT_INVERSE)
-        )
-        vDSP_zvmags(&splitComplexResult, 1, &hilbert, 1, vDSP_Length(input.count))
+    var splitComplex: DSPSplitComplex
+    var signalComplex = [DSPComplex](repeating: DSPComplex(), count: length)
+    
+    // Prepare input signal for FFT
+    var realBuffer = inputSignal
+    var imagBuffer = [Float](repeating: 0, count: bufferSize)
+    
+    // Convert the signal into complex format
+    realBuffer.withUnsafeMutableBufferPointer { realPointer in
+      imagBuffer.withUnsafeMutableBufferPointer { imagPointer in
+        guard
+          let realBaseAddress = realPointer.baseAddress,
+          let imagBaseAddress = imagPointer.baseAddress
+        else {
+          return
+        }
+        splitComplex = DSPSplitComplex(realp: realBaseAddress, imagp: imagBaseAddress)
       }
     }
     
+    // Perform FFT
+    let fftSetup = vDSP_create_fftsetup(log2n, Int32(kFFTRadix2))
+
+    vDSP_fft_zrip(fftSetup!, &splitComplex, 1, log2n, FFTDirection(FFT_FORWARD))
+    
+    // Compute magnitude of the FFT result
+    var magnitudes = [Float](repeating: 0.0, count: length)
+    vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(length))
+    
+    // Compute envelope
+    var envelope = [Float](repeating: 0.0, count: bufferSize)
+    vDSP_vsmul(magnitudes, 1, [2], &envelope, 1, vDSP_Length(length))
+    vDSP_vdbcon(envelope, 1, [1], &envelope, 1, vDSP_Length(bufferSize), 0)
+    
+    // cleaning
     vDSP_destroy_fftsetup(fftSetup)
-    return hilbert
+    
+    return envelope
   }
   
   // Function to downsample signal to target sample rate
@@ -136,7 +139,7 @@ extension BreathObsever {
   }
   
   // Function to apply Welch method and estimate respiratory rate
-  func welchMethod(signal: [Float]) -> Double {
+  func welchMethod(signal: [Float], originalSampleRate: Double) -> Double {
     let windowSize = vDSP_Length(signal.count)
     
     // Apply Hanning window

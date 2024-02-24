@@ -226,13 +226,21 @@ extension BreathObsever {
     }
     
     // Extract signal amplitude envelope using Hilbert transform
-    let amplitudeEnvelope = hilbertTransform(inputSignal: accumulatedBuffer)
+    guard 
+      let amplitudeEnvelope = hilbertTransform(inputSignal: accumulatedBuffer)
+    else {
+      return
+    }
     
-    // Downsample the envelope to 10 Hz
-    let downsampledEnvelope = downsampleSignal(signal: amplitudeEnvelope, originalSampleRate: 44100, targetSampleRate: 10)
+    // Downsample the envelope to 100 Hz
+    let downsampledEnvelope = downsampleSignal(
+      signal: amplitudeEnvelope,
+      originalSampleRate: sampleRate,
+      targetSampleRate: 100
+    )
     
     // Use Welch method to find peaks and estimate respiratory rate
-    let respiratoryRate = welchMethod(signal: downsampledEnvelope)
+    let respiratoryRate = welchMethod(signal: downsampledEnvelope, originalSampleRate: sampleRate)
     
     // TODO: pass the rr here to maybe a passthrough subject
     print("Estimated Respiratory Rate: \(respiratoryRate) breaths per minute")
