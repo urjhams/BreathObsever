@@ -180,9 +180,10 @@ extension BreathObsever {
         
         let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
         
-        accumulatedBuffer.append(contentsOf: (filteredBuffer ?? buffer).floatSamples)
         
         Task { [weak self] in
+          
+          self?.accumulatedBuffer.append(contentsOf: (filteredBuffer ?? buffer).floatSamples)
           
           // TODO: after 5 seconds, run the python script with input as accumulatedBuffer
                     
