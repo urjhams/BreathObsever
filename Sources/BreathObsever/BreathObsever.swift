@@ -178,21 +178,19 @@ extension BreathObsever {
           return
         }
         
-        guard 
-          let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
-        else {
-          return
-        }
+        let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
         
-        accumulatedBuffer.append(contentsOf: filteredBuffer.floatSamples)
+        accumulatedBuffer.append(contentsOf: (filteredBuffer ?? buffer).floatSamples)
         
-//        Task { [weak self] in
+        Task { [weak self] in
+          
+          // TODO: after 5 seconds, run the python script with input as accumulatedBuffer
                     
-//          await self?.processAmplitude(from: filteredBuffer ?? buffer)
-//          
-//          // calculate and send power power
-//          await self?.sendAudioPower(from: filteredBuffer ?? buffer)
-//        }
+          await self?.processAmplitude(from: filteredBuffer ?? buffer)
+          
+          // calculate and send power power
+          await self?.sendAudioPower(from: filteredBuffer ?? buffer)
+        }
       }
       
       try newEngine.start()
