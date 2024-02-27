@@ -38,8 +38,6 @@ public class BreathObsever: NSObject, ObservableObject {
   // Accumulated buffer to store filtered audio data
   var accumulatedBuffer = [Float]()
   
-  let audioQueue = DispatchQueue(label: "AudioSessionQueue")
-  
   public override init() { }
   
   /// The subject that recieves the latest data of audio amplitude
@@ -91,7 +89,12 @@ extension BreathObsever {
   
   private func startAudioSession() throws {
     stopAudioSession()
-    
+    let audioSettings: [String : Any] = [
+      AVFormatIDKey           : kAudioFormatLinearPCM,
+      AVNumberOfChannelsKey   : 1,
+      AVSampleRateKey         : sampleRate
+    ]
+    let queue = DispatchQueue(label: "AudioSessionQueue")
     let microphone: AVCaptureDevice?
     if #available(macOS 14.0, *) {
       microphone = AVCaptureDevice.default(.microphone, for: .audio, position: .unspecified)
@@ -108,15 +111,18 @@ extension BreathObsever {
       session = AVCaptureSession()
       
       let input = try AVCaptureDeviceInput(device: microphone)
+      let output = AVCaptureAudioDataOutput()
       
+      output.setSampleBufferDelegate(self, queue: queue)
+      output.audioSettings = audioSettings
       session?.beginConfiguration()
       try addInput(session, input: input)
+      try addOutput(session, output: output)
       session?.commitConfiguration()
-      
       session?.startRunning()
       
       // start the respiratory timer
-      rrTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+      rrTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
         self?.handleAccumulatedBuffer()
       }
     } catch {
@@ -159,17 +165,8 @@ extension BreathObsever {
       let newEngine = AVAudioEngine()
       audioEngine = newEngine
       
-      let audioFormat = newEngine.inputNode.outputFormat(forBus: 0)
+      let audioFormat = newEngine.inputNode.inputFormat(forBus: 0)
       
-      let recordingFormat = AVAudioFormat(
-        commonFormat: .pcmFormatInt16,
-        sampleRate: sampleRate,
-        channels: 1,
-        interleaved: true
-      )
-      
-      let formatConverter = AVAudioConverter(from: audioFormat, to: recordingFormat!)
-
       // start to record
       newEngine.inputNode.installTap(
         onBus: 0,
@@ -177,56 +174,25 @@ extension BreathObsever {
         format: audioFormat
       ) { [weak self] buffer, time in
         
-        guard let self, let recordingFormat else {
+        guard let self else {
           return
         }
         
-        guard let pcmBuffer = AVAudioPCMBuffer(
-          pcmFormat: recordingFormat,
-          frameCapacity: AVAudioFrameCount(recordingFormat.sampleRate)
-        ) else {
-          return
-        }
-        
-        var error: NSError? = nil
-        
-        let inputBlock: AVAudioConverterInputBlock = { inNumPackets, outStatus in
-          outStatus.pointee = AVAudioConverterInputStatus.haveData
-          return buffer
-        }
-        
-        formatConverter?.convert(to: pcmBuffer, error: &error, withInputFrom: inputBlock)
-        
-        let channelData = pcmBuffer.int16ChannelData
-        let channelDataPointer = channelData?.pointee
-        let data: [Int16] = stride(from: 0, to: Int(pcmBuffer.frameLength), by: buffer.stride)
-          .compactMap{ channelDataPointer?[$0] }
-        
-        print(data.count)
-        
-        guard
+        guard 
           let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
         else {
           return
         }
         
-        let samplesBuffer = filteredBuffer.floatSamples
-                        
-        Task { [weak self] in
-          
-          self?.accumulatedBuffer.append(contentsOf: samplesBuffer)
-          
-          // TODO: define the accumulatedBuffer that have fixed size
-          
-          // TODO: auto remove the 1st frame buffer if the accumulatedBuffer is full
-          
-          // TODO: for the calculation, use a  python script to find respiratory rate
+        accumulatedBuffer.append(contentsOf: filteredBuffer.floatSamples)
+        
+//        Task { [weak self] in
                     
 //          await self?.processAmplitude(from: filteredBuffer ?? buffer)
 //          
 //          // calculate and send power power
 //          await self?.sendAudioPower(from: filteredBuffer ?? buffer)
-        }
+//        }
       }
       
       try newEngine.start()
@@ -259,13 +225,6 @@ extension BreathObsever {
       return
     }
     
-    // TODO: check if the accumulatedBuffer is full yet otherwise return
-    
-    // TODO: convert the buffer to a string of e1,e2,e3
-    
-    // TODO: use the string as the parameter in Process to run in python script.
-    
-    /*
     // Extract signal amplitude envelope using Hilbert transform
     guard 
       let amplitudeEnvelope = hilbertTransform(inputSignal: accumulatedBuffer)
@@ -292,7 +251,5 @@ extension BreathObsever {
     
     // Clear accumulated buffer
     accumulatedBuffer.removeAll()
-     
-    */
   }
 }
