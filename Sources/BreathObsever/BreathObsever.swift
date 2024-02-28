@@ -12,8 +12,8 @@ public class BreathObsever: NSObject, ObservableObject {
     case cannotAddOutput
   }
   
-  /// The sample rate (44,1 Khz)
-  let sampleRate = 44100.0
+  /// The sample rate (44,1 Khz) 24Khz on airpod pro
+  let sampleRate = 24000.0 //44100.0
   
   /// The bandpass filter to remove noise that higher than 1000 Hz and lower than 10 Hz
   lazy var bandpassFilter = BandPassFilter(
@@ -36,6 +36,7 @@ public class BreathObsever: NSObject, ObservableObject {
   var rrTimer: Timer?
   
   // Accumulated buffer to store filtered audio data
+  // TODO: this should have the size of 24000 * 5 since each seconds we should get 24000 samples (just the 1st seconds is 19200 samples)
   var accumulatedBuffer = [Float]()
   
   public override init() { }
@@ -122,7 +123,7 @@ extension BreathObsever {
       session?.startRunning()
       
       // start the respiratory timer
-      rrTimer = Timer.scheduledTimer(withTimeInterval: 5.0, repeats: true) { [weak self] _ in
+      rrTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
         self?.handleAccumulatedBuffer()
       }
     } catch {
@@ -184,7 +185,7 @@ extension BreathObsever {
         Task { [weak self] in
           
           self?.accumulatedBuffer.append(contentsOf: (filteredBuffer ?? buffer).floatSamples)
-          
+                    
           // TODO: after 5 seconds, run the python script with input as accumulatedBuffer
                     
           await self?.processAmplitude(from: filteredBuffer ?? buffer)
@@ -224,31 +225,33 @@ extension BreathObsever {
       return
     }
     
-    // Extract signal amplitude envelope using Hilbert transform
-    guard 
-      let amplitudeEnvelope = hilbertTransform(inputSignal: accumulatedBuffer)
-    else {
-      return
-    }
+    print(accumulatedBuffer.count)
     
-    let downSampleRate: Double = 100
-    
-    // Downsample the envelope to 100 Hz
-    let downsampledEnvelope = downsampleSignal(
-      signal: amplitudeEnvelope,
-      originalSampleRate: sampleRate,
-      targetSampleRate: downSampleRate
-    )
-    
-    let peaks = findPeaks(signal: downsampledEnvelope)
-    
-    // Use Welch method to find peaks and estimate respiratory rate
-    let respiratoryRate = calculateRespiratoryRate(peaks: peaks, sampleRate: Float(downSampleRate))
-    
-    // TODO: pass the rr here to maybe a passthrough subject
-    print("Estimated Respiratory Rate: \(respiratoryRate) breaths per minute")
-    
-    // Clear accumulated buffer
-    accumulatedBuffer.removeAll()
+//    // Extract signal amplitude envelope using Hilbert transform
+//    guard 
+//      let amplitudeEnvelope = hilbertTransform(inputSignal: accumulatedBuffer)
+//    else {
+//      return
+//    }
+//    
+//    let downSampleRate: Double = 100
+//    
+//    // Downsample the envelope to 100 Hz
+//    let downsampledEnvelope = downsampleSignal(
+//      signal: amplitudeEnvelope,
+//      originalSampleRate: sampleRate,
+//      targetSampleRate: downSampleRate
+//    )
+//    
+//    let peaks = findPeaks(signal: downsampledEnvelope)
+//    
+//    // Use Welch method to find peaks and estimate respiratory rate
+//    let respiratoryRate = calculateRespiratoryRate(peaks: peaks, sampleRate: Float(downSampleRate))
+//    
+//    // TODO: pass the rr here to maybe a passthrough subject
+//    print("Estimated Respiratory Rate: \(respiratoryRate) breaths per minute")
+//    
+//    // Clear accumulated buffer
+//    accumulatedBuffer.removeAll()
   }
 }
