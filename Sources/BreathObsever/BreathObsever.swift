@@ -35,9 +35,19 @@ public class BreathObsever: NSObject, ObservableObject {
   /// required to guarantee to collect at least 1 cycle is 5 seconds. So This timer will trigger in each 5 seconds.
   var rrTimer: Timer?
   
-  // Accumulated buffer to store filtered audio data
-  // TODO: this should have the size of 24000 * 5 since each seconds we should get 24000 samples (just the 1st seconds is 19200 samples)
-  var accumulatedBuffer = [Float]()
+  static let windowBufferLimit = 24000 * 5
+  
+  static let respiratoryWindowTimeFrame: TimeInterval = 5.0
+  
+  /// WindowBuffer to store the filtered audio data in each 5 seconds
+  /// These samples then used to calculate the respiratory rate int that 5 seconds window frame
+  /// Because the Airpods has recording sample rate at 24 kHz which is 24000 sample per seconds,
+  /// we need 24000 * 5 as the size of the array's capacity
+  var windowBuffer: [Float] = {
+    var array = [Float]()
+    array.reserveCapacity(windowBufferLimit)
+    return array
+  }()
   
   public override init() { }
   
@@ -123,8 +133,11 @@ extension BreathObsever {
       session?.startRunning()
       
       // start the respiratory timer
-      rrTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-        self?.handleAccumulatedBuffer()
+      rrTimer = Timer.scheduledTimer(
+        withTimeInterval: Self.respiratoryWindowTimeFrame,
+        repeats: true
+      ) { [weak self] _ in
+        self?.handleWindowFrameBuffer()
       }
     } catch {
       stopAudioSession()
@@ -184,9 +197,7 @@ extension BreathObsever {
         
         Task { [weak self] in
           
-          self?.accumulatedBuffer.append(contentsOf: (filteredBuffer ?? buffer).floatSamples)
-                    
-          // TODO: after 5 seconds, run the python script with input as accumulatedBuffer
+          self?.windowBuffer.append(contentsOf: (filteredBuffer ?? buffer).floatSamples)
                     
           await self?.processAmplitude(from: filteredBuffer ?? buffer)
           
@@ -220,12 +231,23 @@ extension BreathObsever {
 
 extension BreathObsever {
   
-  private func handleAccumulatedBuffer() {
-    guard !accumulatedBuffer.isEmpty else {
+  private func handleWindowFrameBuffer() {
+    guard !windowBuffer.isEmpty else {
       return
     }
     
-    print(accumulatedBuffer.count)
+    defer {
+      // make sure to clean the window buffer after we calculate the respiratory rate
+      if windowBuffer.count == Self.windowBufferLimit {
+        windowBuffer = []
+      }
+    }
+    
+    print(windowBuffer.count)
+    
+    // TODO: do the steps to get the respiratory rate value
+    
+    // TODO: send the respiratory rate value into a passthrough subject
     
 //    // Extract signal amplitude envelope using Hilbert transform
 //    guard 
