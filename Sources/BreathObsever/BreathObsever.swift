@@ -12,7 +12,7 @@ public class BreathObsever: NSObject, ObservableObject {
     case cannotAddOutput
   }
   
-  /// The sample rate (44,1 Khz) 24Khz on airpod pro
+  /// The sample rate (44,1 Khz is common): 24Khz on airpod pro
   let sampleRate = 24000.0 //44100.0
   
   /// The bandpass filter to remove noise that higher than 1000 Hz and lower than 10 Hz
@@ -203,6 +203,8 @@ extension BreathObsever {
   }
   
   public func stopAnalyzing() {
+    stopAudioSession()
+    
     autoreleasepool { [weak self] in
       guard let self else {
         return
@@ -213,8 +215,6 @@ extension BreathObsever {
       audioEngine = nil
 
     }
-    
-    stopAudioSession()
   }
 }
 
