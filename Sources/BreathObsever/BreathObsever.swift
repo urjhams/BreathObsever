@@ -236,8 +236,9 @@ extension BreathObsever {
     
     print(amplitudeSamples.count)
     
-    // TODO: do the steps to get the respiratory rate value
     // TODO: apply Hanning Window to smooth the data
+    let smoothed = applyHanningWindow(amplitudeSamples)
+    
     // TODO: apply Welch-Perdiogram (FFT) to find the PSD -> RR
     
     // TODO: send the respiratory rate (RR) value into a passthrough subject

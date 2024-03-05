@@ -72,6 +72,18 @@ extension BreathObsever {
 }
 
 extension BreathObsever {
+  func applyHanningWindow(_ data: [Float]) -> [Float] {
+    var windowedData = [Float](repeating: 0.0, count: data.count)
+    vDSP_hann_window(&windowedData, vDSP_Length(data.count), Int32(vDSP_HANN_NORM))
+    
+    var output = [Float](repeating: 0.0, count: data.count)
+    vDSP_vmul(windowedData, 1, data, 1, &output, 1, vDSP_Length(data.count))
+    
+    return output
+  }
+}
+
+extension BreathObsever {
   // Function to perform Hilbert transform
   func hilbertTransform(inputSignal: [Float]) -> [Float]? {
     let bufferSize = inputSignal.count
