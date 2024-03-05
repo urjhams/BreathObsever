@@ -191,6 +191,15 @@ extension BreathObsever {
   
   @MainActor
   internal func processAmplitude(from buffer: AVAudioPCMBuffer) {
+
+    let amplitude = amplitude(from: buffer)
+    
+    // Update the graph with the audio waveform
+    amplitudeSubject.send(amplitude <= threshold ? amplitude : threshold)
+  }
+  
+  @MainActor
+  func amplitude(from buffer: AVAudioPCMBuffer) -> Float {
     // Extract audio samples from the buffer
     let bufferLength = UInt(buffer.frameLength)
     let audioBuffer = UnsafeBufferPointer(
@@ -199,9 +208,6 @@ extension BreathObsever {
     )
     
     // Calculate the amplitude from the audio samples
-    let amplitude = audioBuffer.reduce(0.0) { max($0, abs($1)) }
-    
-    // Update the graph with the audio waveform
-    amplitudeSubject.send(amplitude <= threshold ? amplitude : threshold)
+    return audioBuffer.reduce(0.0) { max($0, abs($1)) }
   }
 }

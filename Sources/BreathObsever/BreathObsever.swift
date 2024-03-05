@@ -29,23 +29,14 @@ public class BreathObsever: NSObject, ObservableObject {
   
   /// audio sample buffer size
   let bufferSize: UInt32 = 1024
-  
-  /// The respiratory rate timer, which run every 5 seconds. It will be callocated each time the session start.
-  /// The normal respiratory rate is around 12-18 breaths per min, which is 0.2-0z5Hz, So the longest time window
-  /// required to guarantee to collect at least 1 cycle is 5 seconds. So This timer will trigger in each 5 seconds.
-  var rrTimer: Timer?
-  
-  static let windowBufferLimit = 24000 * 5
-  
+    
   static let respiratoryWindowTimeFrame: TimeInterval = 5.0
   
-  /// WindowBuffer to store the filtered audio data in each 5 seconds
-  /// These samples then used to calculate the respiratory rate int that 5 seconds window frame
-  /// Because the Airpods has recording sample rate at 24 kHz which is 24000 sample per seconds,
-  /// we need 24000 * 5 as the size of the array's capacity
-  var windowBuffer: [Float] = {
+  ///Tthe samples of amplitude for 5 seconds
+  /// Because we get the amplitude value in each 0.1 second (10Hz), so we need the array of size 10 * 5 = 50
+  var amplitudeSamples: [Float] = {
     var array = [Float]()
-    array.reserveCapacity(windowBufferLimit)
+    array.reserveCapacity(50)
     return array
   }()
   
@@ -94,7 +85,6 @@ extension BreathObsever {
   private func stopAudioSession() {
     autoreleasepool { [weak self] in
       self?.session?.stopRunning()
-      self?.rrTimer = nil
     }
   }
   
@@ -132,13 +122,6 @@ extension BreathObsever {
       session?.commitConfiguration()
       session?.startRunning()
       
-      // start the respiratory timer
-      rrTimer = Timer.scheduledTimer(
-        withTimeInterval: Self.respiratoryWindowTimeFrame,
-        repeats: true
-      ) { [weak self] _ in
-        self?.handleWindowFrameBuffer()
-      }
     } catch {
       stopAudioSession()
       throw error
@@ -194,15 +177,24 @@ extension BreathObsever {
         
         let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
         
-        
         Task { [weak self] in
           
-          self?.windowBuffer.append(contentsOf: (filteredBuffer ?? buffer).floatSamples)
-                    
-          await self?.processAmplitude(from: filteredBuffer ?? buffer)
+          guard let self else {
+            return
+          }
           
-          // calculate and send power power
-          await self?.sendAudioPower(from: filteredBuffer ?? buffer)
+          let amplitude = await amplitude(from: filteredBuffer ?? buffer)
+          amplitudeSamples.append(amplitude)
+          
+          // calculate the respiratory rate after each 5 seconds
+          if amplitudeSamples.count == amplitudeSamples.capacity {
+            await calculateRespiratoryRate()
+          }
+          
+          await processAmplitude(from: filteredBuffer ?? buffer)
+          
+          // TODO: maybe remove this?
+          await sendAudioPower(from: filteredBuffer ?? buffer)
         }
       }
       
@@ -231,49 +223,23 @@ extension BreathObsever {
 
 extension BreathObsever {
   
-  private func handleWindowFrameBuffer() {
-    guard !windowBuffer.isEmpty else {
+  @MainActor
+  private func calculateRespiratoryRate() {
+    guard !amplitudeSamples.isEmpty else {
       return
     }
     
     defer {
       // make sure to clean the window buffer after we calculate the respiratory rate
-      if windowBuffer.count == Self.windowBufferLimit {
-        windowBuffer = []
-      }
+      amplitudeSamples = []
     }
     
-    print(windowBuffer.count)
+    print(amplitudeSamples.count)
     
     // TODO: do the steps to get the respiratory rate value
+    // TODO: apply Hanning Window to smooth the data
+    // TODO: apply Welch-Perdiogram (FFT) to find the PSD -> RR
     
-    // TODO: send the respiratory rate value into a passthrough subject
-    
-//    // Extract signal amplitude envelope using Hilbert transform
-//    guard 
-//      let amplitudeEnvelope = hilbertTransform(inputSignal: accumulatedBuffer)
-//    else {
-//      return
-//    }
-//    
-//    let downSampleRate: Double = 100
-//    
-//    // Downsample the envelope to 100 Hz
-//    let downsampledEnvelope = downsampleSignal(
-//      signal: amplitudeEnvelope,
-//      originalSampleRate: sampleRate,
-//      targetSampleRate: downSampleRate
-//    )
-//    
-//    let peaks = findPeaks(signal: downsampledEnvelope)
-//    
-//    // Use Welch method to find peaks and estimate respiratory rate
-//    let respiratoryRate = calculateRespiratoryRate(peaks: peaks, sampleRate: Float(downSampleRate))
-//    
-//    // TODO: pass the rr here to maybe a passthrough subject
-//    print("Estimated Respiratory Rate: \(respiratoryRate) breaths per minute")
-//    
-//    // Clear accumulated buffer
-//    accumulatedBuffer.removeAll()
+    // TODO: send the respiratory rate (RR) value into a passthrough subject
   }
 }
