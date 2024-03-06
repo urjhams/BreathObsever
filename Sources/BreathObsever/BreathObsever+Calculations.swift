@@ -161,7 +161,7 @@ extension BreathObsever {
   internal func processAmplitude(from buffer: AVAudioPCMBuffer) {
 
     let amplitude = amplitude(from: buffer)
-    
+    print(amplitude)
     // Update the graph with the audio waveform
     amplitudeSubject.send(amplitude <= threshold ? amplitude : threshold)
   }

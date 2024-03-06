@@ -56,6 +56,13 @@ public class BreathObsever: NSObject, ObservableObject {
 // MARK: microphone check
 extension BreathObsever {
   private func ensureMicrophoneAccess() throws {
+    if #available(macOS 14.0, *) {
+      let discoverSession = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone], mediaType: .audio, position: .unspecified)
+      let devices = discoverSession.devices
+      print(devices.map(\.modelID)) // "200e 4c"
+    } else {
+      // Fallback on earlier versions
+    }
     var hasMicrophoneAccess = false
     switch AVCaptureDevice.authorizationStatus(for: .audio) {
     case .notDetermined:
@@ -89,6 +96,14 @@ extension BreathObsever {
   }
   
   private func startAudioSession() throws {
+    /*
+     The main parts of the capture architecture are sessions, inputs, and outputs:
+     Capture sessions connect one or more inputs to one or more outputs. Inputs are sources of media,
+     including capture devices like the cameras and microphones built into an iOS device or Mac.
+     Outputs acquire media from inputs to produce useful data, such as movie files written to disk
+     or raw pixel buffers available for live processing.
+     */
+    
     stopAudioSession()
     let audioSettings: [String : Any] = [
       AVFormatIDKey           : kAudioFormatLinearPCM,
@@ -177,7 +192,7 @@ extension BreathObsever {
         
         let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
         
-        // TODO: hmm, whatabout use the python script, seems all necessary step can do on python sciPy library
+        // TODO: hmm, what about use the python script, seems all necessary step can do on python sciPy library
         
         Task { @MainActor [weak self] in
           
