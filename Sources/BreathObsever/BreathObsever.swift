@@ -13,11 +13,11 @@ public class BreathObsever: NSObject, ObservableObject {
   }
   
   /// The sample rate (44,1 Khz is common): 24Khz on airpod pro
-  let sampleRate = 24000.0 //44100.0
+  public static let sampleRate = 24000.0 //44100.0
   
   /// The number of sample per frame
-  static let samples = 512
-  static let hopCount = 256
+  public static let samples = 512
+  public static let hopCount = 256
   
   let forwardDCT = vDSP.DCT(count: samples, transformType: .II)!
   
@@ -63,22 +63,9 @@ public class BreathObsever: NSObject, ObservableObject {
     autoreleaseFrequency: .workItem
   )
   
-  /// audio sample buffer size
-  let bufferSize: UInt32 = 1024
-  
   /// samples limit at the point where we reach this limit, we apply the respiratory rate calculation
   /// (each 5 seconds)
-  static let samplesLimit = 24000 * 5
-    
-  static let amplitudeSamplesCapacity = 50
-  
-  ///Tthe samples of amplitude for 5 seconds
-  /// Because we get the amplitude value in each 0.1 second (10Hz), so we need the array of size 10 * 5 = 50
-  var amplitudeSamples: [Float] = {
-    var array = [Float]()
-    array.reserveCapacity(amplitudeSamplesCapacity)
-    return array
-  }()
+  public static let samplesLimit = sampleRate * 5
   
   public override init() { 
     super.init()
