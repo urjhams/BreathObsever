@@ -161,7 +161,10 @@ extension BreathObsever {
   internal func processAmplitude(from buffer: AVAudioPCMBuffer) {
 
     let amplitude = amplitude(from: buffer)
-    print(amplitude)
+    
+    /// Amplitude threshold for loudest breathing noise that we accept. All higher noise will be counted as this.
+    let threshold: Float = 0.08
+    
     // Update the graph with the audio waveform
     amplitudeSubject.send(amplitude <= threshold ? amplitude : threshold)
   }

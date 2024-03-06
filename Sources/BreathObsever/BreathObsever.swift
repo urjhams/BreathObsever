@@ -15,20 +15,60 @@ public class BreathObsever: NSObject, ObservableObject {
   /// The sample rate (44,1 Khz is common): 24Khz on airpod pro
   let sampleRate = 24000.0 //44100.0
   
-  /// The bandpass filter to remove noise that higher than 1000 Hz and lower than 10 Hz
-  lazy var bandpassFilter = BandPassFilter(
-    sampleRate: sampleRate,
-    frequencyLow: 10,
-    frequencyHigh: 1000
+  /// The number of sample per frame
+  static let samples = 512
+  static let hopCount = 256
+  
+  let forwardDCT = vDSP.DCT(count: samples, transformType: .II)!
+  
+  /// The window sequence for normalizing
+  let hanningWindow = vDSP.window(
+    ofType: Float.self,
+    usingSequence: .hanningNormalized,
+    count: samples,
+    isHalfWindow: false
   )
   
+  /// A buffer that contains the raw audio data from AVFoundation.
+  var rawAudioData = [Int16]()
+  
+  /// A reusable array that contains the current frame of time-domain audio data as single-precision
+  /// values.
+  var timeDomainBuffer = [Float](repeating: 0, count: samples)
+  
+  /*
+   The main parts of the capture architecture are sessions, inputs, and outputs:
+   Capture sessions connect one or more inputs to one or more outputs. Inputs are sources of media,
+   including capture devices like the cameras and microphones built into an iOS device or Mac.
+   Outputs acquire media from inputs to produce useful data, such as movie files written to disk
+   or raw pixel buffers available for live processing.
+  */
   var session: AVCaptureSession?
   
   /// Audio engine for recording
   private var audioEngine: AVAudioEngine?
   
+  let audioOutput = AVCaptureAudioDataOutput()
+  
+  let captureQueue = DispatchQueue(
+    label: "captureQueue",
+    qos: .userInitiated,
+    attributes: [],
+    autoreleaseFrequency: .workItem
+  )
+  
+  let sessionQueue = DispatchQueue(
+    label: "sessionQueue",
+    attributes: [],
+    autoreleaseFrequency: .workItem
+  )
+  
   /// audio sample buffer size
   let bufferSize: UInt32 = 1024
+  
+  /// samples limit at the point where we reach this limit, we apply the respiratory rate calculation
+  /// (each 5 seconds)
+  static let samplesLimit = 24000 * 5
     
   static let amplitudeSamplesCapacity = 50
   
@@ -40,7 +80,19 @@ public class BreathObsever: NSObject, ObservableObject {
     return array
   }()
   
-  public override init() { }
+  public override init() { 
+    super.init()
+    configureAudioEngine()
+    configureCaptureSession()
+    audioOutput.setSampleBufferDelegate(self, queue: captureQueue)
+  }
+  
+  deinit {
+    audioEngine?.stop()
+    audioEngine?.inputNode.removeTap(onBus: 0)
+    audioEngine = nil
+    session = nil
+  }
   
   /// The subject that recieves the latest data of audio amplitude
   public var amplitudeSubject = PassthroughSubject<Float, Never>()
@@ -48,218 +100,194 @@ public class BreathObsever: NSObject, ObservableObject {
   /// The sujbect that recieves the latest data of audio power in decibel
   public var powerSubject = PassthroughSubject<Float, Never>()
   
-  /// Amplitude threshold for loudest breathing noise that we accept. All higher noise will be counted as this.
-  let threshold: Float = 0.08
-  
-}
-
-// MARK: microphone check
-extension BreathObsever {
-  private func ensureMicrophoneAccess() throws {
-    if #available(macOS 14.0, *) {
-      let discoverSession = AVCaptureDevice.DiscoverySession(deviceTypes: [.microphone], mediaType: .audio, position: .unspecified)
-      let devices = discoverSession.devices
-      print(devices.map(\.modelID)) // "200e 4c"
-    } else {
-      // Fallback on earlier versions
-    }
-    var hasMicrophoneAccess = false
-    switch AVCaptureDevice.authorizationStatus(for: .audio) {
-    case .notDetermined:
-      let sem = DispatchSemaphore(value: 0)
-      AVCaptureDevice.requestAccess(for: .audio) { success in
-        hasMicrophoneAccess = success
-        sem.signal()
-      }
-      _ = sem.wait(timeout: DispatchTime.distantFuture)
-    case .denied, .restricted:
-      break
-    case .authorized:
-      hasMicrophoneAccess = true
-    @unknown default:
-      fatalError("unknown authorization status for microphone access")
-    }
-    
-    if !hasMicrophoneAccess {
-      throw ObserverError.noMicrophoneAccess
-    }
-  }
-}
-
-// MARK: AudioSession
-extension BreathObsever {
-  
-  private func stopAudioSession() {
-    autoreleasepool { [weak self] in
-      self?.session?.stopRunning()
-    }
-  }
-  
-  private func startAudioSession() throws {
-    /*
-     The main parts of the capture architecture are sessions, inputs, and outputs:
-     Capture sessions connect one or more inputs to one or more outputs. Inputs are sources of media,
-     including capture devices like the cameras and microphones built into an iOS device or Mac.
-     Outputs acquire media from inputs to produce useful data, such as movie files written to disk
-     or raw pixel buffers available for live processing.
-     */
-    
-    stopAudioSession()
-    let audioSettings: [String : Any] = [
-      AVFormatIDKey           : kAudioFormatLinearPCM,
-      AVNumberOfChannelsKey   : 1,
-      AVSampleRateKey         : sampleRate
-    ]
-    let queue = DispatchQueue(label: "AudioSessionQueue")
-    let microphone: AVCaptureDevice?
-    if #available(macOS 14.0, *) {
-      microphone = AVCaptureDevice.default(.microphone, for: .audio, position: .unspecified)
-    } else {
-      // Fallback on earlier versions
-      microphone = AVCaptureDevice.default(for: .audio)
-    }
-    guard let microphone else {
-      throw ObserverError.noCaptureDevice
-    }
-    
-    do {
-      try ensureMicrophoneAccess()
-      session = AVCaptureSession()
-      
-      let input = try AVCaptureDeviceInput(device: microphone)
-      let output = AVCaptureAudioDataOutput()
-      
-      output.setSampleBufferDelegate(self, queue: queue)
-      output.audioSettings = audioSettings
-      session?.beginConfiguration()
-      try addInput(session, input: input)
-      try addOutput(session, output: output)
-      session?.commitConfiguration()
-      session?.startRunning()
-      
-    } catch {
-      stopAudioSession()
-      throw error
-    }
-  }
-  
-  private func addInput(_ session: AVCaptureSession?, input: AVCaptureDeviceInput) throws {
-    guard let session, session.canAddInput(input) else {
-      throw ObserverError.cannotAddInput
-    }
-    session.addInput(input)
-  }
-  
-  private func addOutput(_ session: AVCaptureSession?, output: AVCaptureAudioDataOutput) throws {
-    guard let session, session.canAddOutput(output) else {
-      throw ObserverError.cannotAddOutput
-    }
-    session.addOutput(output)
-  }
 }
 
 extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
+  public func captureOutput(
+    _ output: AVCaptureOutput,
+    didOutput sampleBuffer: CMSampleBuffer,
+    from connection: AVCaptureConnection
+  ) {
+    var audioBufferList = AudioBufferList()
+    var blockBuffer: CMBlockBuffer?
+    CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+      sampleBuffer,
+      bufferListSizeNeededOut: nil,
+      bufferListOut: &audioBufferList,
+      bufferListSize: MemoryLayout.stride(ofValue: audioBufferList),
+      blockBufferAllocator: nil,
+      blockBufferMemoryAllocator: nil,
+      flags: kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+      blockBufferOut: &blockBuffer)
+    
+    guard let data = audioBufferList.mBuffers.mData else {
+      return
+    }
+    
+    /// Because the audio spectrogram code requires exactly `sampleCount` (which the app defines
+    /// as 512) samples, but audio sample buffers from AVFoundation may not always contain exactly
+    /// 512 samples, the app adds the contents of each audio sample buffer to `rawAudioData`.
+    ///
+    /// The following code creates an array from `data` and appends it to  `rawAudioData`:
+    if rawAudioData.count < Self.samples * 2 {
+      let actualSampleCount = CMSampleBufferGetNumSamples(sampleBuffer)
+      let pointer = data.bindMemory(to: Int16.self, capacity: actualSampleCount)
+      let buffer = UnsafeMutableBufferPointer(start: pointer, count: actualSampleCount)
+      
+      rawAudioData.append(contentsOf: buffer)
+    }
+    
+    /// The following code app passes the first `sampleCount`elements of raw audio data to the
+    /// `processData(values:)` function, and removes the first `hopCount` elements from
+    /// `rawAudioData`.
+    ///
+    /// By removing fewer elements than each step processes, the rendered frames of data overlap,
+    /// ensuring no loss of audio data.
+    while rawAudioData.count >= Self.samples {
+      let dataToProcess = Array(rawAudioData[0 ..< Self.samples])
+      rawAudioData.removeFirst(Self.hopCount)
+      processData(values: dataToProcess)
+    }
+    
+    DispatchQueue.main.async { [unowned self] in
+      let amplitude = timeDomainBuffer.reduce(0.0) { max($0, abs($1)) }
+      amplitudeSubject.send(amplitude)
+    }
+  }
+}
+
+extension BreathObsever {
+  func processData(values: [Int16]) {
+    print(values)
+    // convert the buffer data to the timeDomainBuffer
+    vDSP.convertElements(of: values, to: &timeDomainBuffer)
+    
+    
+    // apply Hanning window to smoothing the data
+    vDSP.multiply(timeDomainBuffer, hanningWindow, result: &timeDomainBuffer)
+    
+    // get the abs value as amplitudes
+    vDSP.absolute(timeDomainBuffer, result: &timeDomainBuffer)
+    
+  }
+}
+
+extension BreathObsever {
   
+  private func configureAudioEngine() {
+    let newEngine = AVAudioEngine()
+    audioEngine = newEngine
+  }
+  
+  private func configureCaptureSession() {
+    session = AVCaptureSession()
+    
+    // bandpass filter at 10 to 1000 Hz
+    let bandpassFilter = AVAudioUnitEQ(numberOfBands: 1)
+    let topFrequency: Float = 1000 // in Hz
+    let bottomFrequency: Float = 10  // in Hz
+    let centerFrequency = (topFrequency + bottomFrequency) / 2
+    let bandWidth = centerFrequency / (topFrequency - bottomFrequency)
+    bandpassFilter.bands[0].filterType = .bandPass
+    bandpassFilter.bands[0].bandwidth = bandWidth
+    bandpassFilter.bands[0].frequency = centerFrequency
+    bandpassFilter.bands[0].bypass = false
+    audioEngine?.attach(bandpassFilter)
+    
+    // Connect audio engine nodes
+    if let audioNode = audioEngine?.inputNode {
+      let format = audioNode.outputFormat(forBus: 0)
+      audioEngine?.connect(audioNode, to: bandpassFilter, format: format)
+    }
+    
+    switch AVCaptureDevice.authorizationStatus(for: .audio) {
+    case .authorized:
+      break
+    case .notDetermined:
+      sessionQueue.suspend()
+      AVCaptureDevice.requestAccess(for: .audio) { granted in
+        if !granted {
+          fatalError("App requires microphone access.")
+        } else {
+          self.configureCaptureSession()
+          self.sessionQueue.resume()
+        }
+      }
+      return
+    default:
+      // Users can add authorization by choosing Settings > Privacy >
+      // Microphone on an iOS device, or System Preferences >
+      // Security & Privacy > Microphone on a macOS device.
+      fatalError("App requires microphone access.")
+    }
+    
+    guard let session else {
+      fatalError("cannot allocate capture session")
+    }
+    
+    session.beginConfiguration()
+    #if os(macOS)
+    audioOutput.audioSettings = [
+      AVSampleRateKey: 24000, // 24 Khz is the sample rate of Apple's airpod
+      AVFormatIDKey: kAudioFormatLinearPCM,
+      AVLinearPCMIsFloatKey: false,
+      AVLinearPCMBitDepthKey: 16,
+      AVNumberOfChannelsKey: 1
+    ]
+    #endif
+    
+    if session.canAddOutput(audioOutput) {
+      session.addOutput(audioOutput)
+    } else {
+      fatalError("Can't add `audioOutput`.")
+    }
+    
+    let type: AVCaptureDevice.DeviceType = if #available(macOS 14.0, *) {
+      .microphone
+    } else {
+      // Fallback on earlier versions
+      .builtInMicrophone
+    }
+    
+    let discoverySession = AVCaptureDevice
+      .DiscoverySession(deviceTypes: [type], mediaType: .audio, position: .unspecified)
+    
+    let devices = discoverySession.devices
+    
+    // 200e 4c is the modelID of airpod pro
+    let microphone = devices.first(where: { device in device.modelID == "200e 4c"}) ??
+    AVCaptureDevice.default(type, for: .audio, position: .unspecified)
+    
+    guard
+      let microphone,
+      let microphoneInput = try? AVCaptureDeviceInput(device: microphone) else {
+      fatalError("Can't create microphone.")
+    }
+    
+    if session.canAddInput(microphoneInput) {
+      session.addInput(microphoneInput)
+    }
+    
+    session.commitConfiguration()
+  }
 }
 
 extension BreathObsever {
   public func startAnalyzing() throws {
-    stopAnalyzing()
-    
-    do {
-      try startAudioSession()
-      try ensureMicrophoneAccess()
-      
-      // start the engine
-      // IMPORTARNT!!! must start the new engine here right before installTap
-      // to prevent error:
-      // reason: 'required condition is false: format.sampleRate == hwFormat.sampleRate.
-      let newEngine = AVAudioEngine()
-      audioEngine = newEngine
-      
-      let audioFormat = newEngine.inputNode.inputFormat(forBus: 0)
-      
-      // start to record
-      newEngine.inputNode.installTap(
-        onBus: 0,
-        bufferSize: bufferSize,
-        format: audioFormat
-      ) { [weak self] buffer, time in
-        
-        guard let self else {
-          return
-        }
-        
-        let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
-        
-        // TODO: hmm, what about use the python script, seems all necessary step can do on python sciPy library
-        
-        Task { @MainActor [weak self] in
-          
-          guard let self else {
-            return
-          }
-          
-          let amplitude = amplitude(from: filteredBuffer ?? buffer)
-          
-          amplitudeSamples.append(amplitude)
-          
-          // calculate the respiratory rate after each 5 seconds
-          if amplitudeSamples.count >= Self.amplitudeSamplesCapacity {
-            
-            calculateRespiratoryRate()
-          }
-          
-          processAmplitude(from: filteredBuffer ?? buffer)
-          
-//          // TODO: maybe remove this?
-//          sendAudioPower(from: filteredBuffer ?? buffer)
-        }
+    try sessionQueue.asyncAndWait {
+      [weak self] in
+      guard case .authorized = AVCaptureDevice.authorizationStatus(for: .audio) else {
+        return
       }
-      
-      try newEngine.start()
-    } catch {
-      stopAnalyzing()
-      throw error
+      self?.session?.startRunning()
+      try self?.audioEngine?.start()
     }
   }
   
   public func stopAnalyzing() {
-    stopAudioSession()
-    
-    autoreleasepool { [weak self] in
-      guard let self else {
-        return
-      }
-      
-      audioEngine?.stop()
-      audioEngine?.inputNode.removeTap(onBus: 0)
-      audioEngine = nil
-
+    sessionQueue.async { [weak self] in
+      self?.session?.stopRunning()
+      self?.audioEngine?.stop()
     }
-  }
-}
-
-extension BreathObsever {
-  
-  @MainActor
-  private func calculateRespiratoryRate() {
-    guard
-      !amplitudeSamples.isEmpty,
-      amplitudeSamples.count == amplitudeSamples.capacity
-    else {
-      return
-    }
-        
-    // find the PSD -> RR
-    let psd = singleWindowWelchPeriodogram(of: amplitudeSamples)
-    print(amplitudeSamples)
-    print(psd)
-    
-    // TODO: send the respiratory rate (RR) value into a passthrough subject
-    
-    
-    // clean the amplitude array for new cycle of observation and calculation
-    amplitudeSamples = []
   }
 }
