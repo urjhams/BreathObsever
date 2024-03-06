@@ -30,13 +30,13 @@ public class BreathObsever: NSObject, ObservableObject {
   /// audio sample buffer size
   let bufferSize: UInt32 = 1024
     
-  static let respiratoryWindowTimeFrame: TimeInterval = 5.0
+  static let amplitudeSamplesCapacity = 50
   
   ///Tthe samples of amplitude for 5 seconds
   /// Because we get the amplitude value in each 0.1 second (10Hz), so we need the array of size 10 * 5 = 50
   var amplitudeSamples: [Float] = {
     var array = [Float]()
-    array.reserveCapacity(50)
+    array.reserveCapacity(amplitudeSamplesCapacity)
     return array
   }()
   
@@ -177,24 +177,28 @@ extension BreathObsever {
         
         let filteredBuffer = applyBandPassFilter(inputBuffer: buffer, filter: bandpassFilter)
         
-        Task { [weak self] in
+        // TODO: hmm, whatabout use the python script, seems all necessary step can do on python sciPy library
+        
+        Task { @MainActor [weak self] in
           
           guard let self else {
             return
           }
           
-          let amplitude = await amplitude(from: filteredBuffer ?? buffer)
+          let amplitude = amplitude(from: filteredBuffer ?? buffer)
+          
           amplitudeSamples.append(amplitude)
           
           // calculate the respiratory rate after each 5 seconds
-          if amplitudeSamples.count == amplitudeSamples.capacity {
-            await calculateRespiratoryRate()
+          if amplitudeSamples.count >= Self.amplitudeSamplesCapacity {
+            
+            calculateRespiratoryRate()
           }
           
-          await processAmplitude(from: filteredBuffer ?? buffer)
+          processAmplitude(from: filteredBuffer ?? buffer)
           
-          // TODO: maybe remove this?
-          await sendAudioPower(from: filteredBuffer ?? buffer)
+//          // TODO: maybe remove this?
+//          sendAudioPower(from: filteredBuffer ?? buffer)
         }
       }
       
@@ -225,22 +229,22 @@ extension BreathObsever {
   
   @MainActor
   private func calculateRespiratoryRate() {
-    guard !amplitudeSamples.isEmpty else {
+    guard
+      !amplitudeSamples.isEmpty,
+      amplitudeSamples.count == amplitudeSamples.capacity
+    else {
       return
     }
-    
-    defer {
-      // make sure to clean the window buffer after we calculate the respiratory rate
-      amplitudeSamples = []
-    }
-    
-    print(amplitudeSamples.count)
-    
-    // TODO: apply Hanning Window to smooth the data
-    let smoothed = applyHanningWindow(amplitudeSamples)
-    
-    // TODO: apply Welch-Perdiogram (FFT) to find the PSD -> RR
+        
+    // find the PSD -> RR
+    let psd = singleWindowWelchPeriodogram(of: amplitudeSamples)
+    print(amplitudeSamples)
+    print(psd)
     
     // TODO: send the respiratory rate (RR) value into a passthrough subject
+    
+    
+    // clean the amplitude array for new cycle of observation and calculation
+    amplitudeSamples = []
   }
 }

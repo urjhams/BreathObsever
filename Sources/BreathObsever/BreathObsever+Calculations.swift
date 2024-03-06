@@ -81,104 +81,60 @@ extension BreathObsever {
     
     return output
   }
-}
-
-extension BreathObsever {
-  // Function to perform Hilbert transform
-  func hilbertTransform(inputSignal: [Float]) -> [Float]? {
-    let bufferSize = inputSignal.count
-    let log2n = UInt(round(log2(Double(bufferSize))))
-    let bufferSizePOT = Int(1 << log2n)
-    let length = bufferSizePOT / 2
+  
+  // Get Power Spectral Density
+  func singleWindowWelchPeriodogram(of data: [Float]) -> [Float] {
+    let windowSize = data.count
+    let overlap = 0  // No overlap since we're using a single window
     
-    var splitComplex: DSPSplitComplex?
+    var psd = [Float](repeating: 0.0, count: windowSize / 2)
     
-    // Prepare input signal for FFT
-    var realBuffer = inputSignal
-    var imagBuffer = [Float](repeating: 0, count: bufferSize)
+    // Apply Hanning window to the entire data array
+    var windowedData = applyHanningWindow(data)
     
-    // Convert the signal into complex format
-    realBuffer.withUnsafeMutableBufferPointer { realPointer in
-      imagBuffer.withUnsafeMutableBufferPointer { imagPointer in
-        guard
-          let realBaseAddress = realPointer.baseAddress,
-          let imagBaseAddress = imagPointer.baseAddress
-        else {
-          return
+    // Perform FFT on the entire windowed data
+    var realParts = [Float](repeating: 0, count: windowSize)
+    var imagParts = [Float](repeating: 0, count: windowSize)
+    
+    realParts.withUnsafeMutableBufferPointer { realPtr in
+      imagParts.withUnsafeMutableBufferPointer { imagPtr in
+        
+        var splitComplex = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
+        
+        data.withUnsafeBytes {
+          vDSP.convert(
+            interleavedComplexVector: [DSPComplex]($0.bindMemory(to: DSPComplex.self)),
+            toSplitComplexVector: &splitComplex
+          )
         }
-        splitComplex = DSPSplitComplex(realp: realBaseAddress, imagp: imagBaseAddress)
+        
+        let log2n = vDSP_Length(log2(Float(windowSize * 2)))
+        let fft = vDSP.FFT(log2n: log2n, radix: .radix2, ofType: DSPSplitComplex.self)
+        
+        fft?.forward(input: splitComplex, output: &splitComplex)
+        
+        // Compute power spectrum
+        var power = [Float](repeating: 0.0, count: windowSize / 2)
+        vDSP_zvmags(&splitComplex, 1, &power, 1, vDSP_Length(windowSize / 2))
+        
+        // Accumulate power for PSD
+        for i in 0..<psd.count {
+          psd[i] += power[i]
+        }
+        
+        // Scale the PSD
+        let scalingFactor = 1.0 / Float(windowSize)
+        for i in 0..<psd.count {
+          psd[i] *= scalingFactor
+        }
       }
     }
-    
-    // Perform FFT
-    guard
-      var splitComplex,
-      let fftSetup = vDSP_create_fftsetup(log2n, Int32(kFFTRadix2))
-    else {
-      return nil
-    }
-
-    vDSP_fft_zrip(fftSetup, &splitComplex, 1, log2n, FFTDirection(FFT_FORWARD))
-    
-    // Compute magnitude of the FFT result
-    var magnitudes = [Float](repeating: 0.0, count: length)
-    vDSP_zvmags(&splitComplex, 1, &magnitudes, 1, vDSP_Length(length))
-    
-    // Compute envelope
-    var envelope = [Float](repeating: 0.0, count: bufferSize)
-    vDSP_vsmul(magnitudes, 1, [2], &envelope, 1, vDSP_Length(length))
-    vDSP_vdbcon(envelope, 1, [1], &envelope, 1, vDSP_Length(bufferSize), 0)
-    
-    // cleaning
-    vDSP_destroy_fftsetup(fftSetup)
-    
-    return envelope
+        
+    return psd
   }
   
-  // Function to downsample signal to target sample rate
-  func downsampleSignal(signal: [Float], originalSampleRate: Double, targetSampleRate: Double) -> [Float] {
-    let downsampleFactor = Int(round(originalSampleRate / targetSampleRate))
-    let downsampledLength = signal.count / downsampleFactor
-    
-    var downsampledSignal = [Float](repeating: 0.0, count: downsampledLength)
-    
-    // Downsample signal
-    vDSP_desamp(
-      signal, 
-      vDSP_Stride(downsampleFactor),
-      [Float](repeating: 0.0, count: downsampledLength),
-      &downsampledSignal, vDSP_Length(downsampledLength),
-      vDSP_Length(downsampleFactor)
-    )
-    
-    return downsampledSignal
-  }
+  // TODO: find the peak as the respiratory rate
   
-  func findPeaks(signal: [Float]) -> [Int] {
-    var peaks: [Int] = []
-    
-    for i in 1..<(signal.count - 1) {
-      if signal[i] > signal[i-1] && signal[i] > signal[i+1] {
-        peaks.append(i)
-      }
-    }
-    
-    return peaks
-  }
-  
-  func calculateRespiratoryRate(peaks: [Int], sampleRate: Float) -> Float {
-    var timeSum: Float = 0
-    
-    for i in 1..<peaks.count {
-      let cycleDuration = Float(peaks[i] - peaks[i-1]) / sampleRate
-      timeSum += cycleDuration
-    }
-    
-    let averageCycleDuration = timeSum / Float(peaks.count - 1)
-    let respiratoryRate = 60 / averageCycleDuration
-    
-    return respiratoryRate
-  }
 }
 
 // MARK: - audio digital power recieved

@@ -31,58 +31,6 @@ extension FFTAnlyzer {
 
 // MARK: - FFT perform
 extension FFTAnlyzer {
-//  public typealias FFTResult = (real: [Float], imaginary: [Float])
-//  
-//  public func performFFT(buffer: AVAudioPCMBuffer) -> FFTResult? {
-//
-//    let bufferSize = Int(buffer.frameLength)
-//    let length = bufferSize / 2
-//    
-//    var realBuffer      = [Float](repeating: 0.0, count: length)
-//    var imaginaryBuffer = [Float](repeating: 0.0, count: length)
-//    
-//    var splitComplex: DSPSplitComplex?
-//    //wrap the result inside a complex vector representation used in the vDSP framework
-//    realBuffer.withUnsafeMutableBufferPointer { real in
-//      imaginaryBuffer.withUnsafeMutableBufferPointer { imaginary in
-//        guard
-//          let realOutAddress = real.baseAddress,
-//          let imagOutAddress = imaginary.baseAddress
-//        else {
-//          return
-//        }
-//        splitComplex = DSPSplitComplex(realp: realOutAddress, imagp: imagOutAddress)
-//      }
-//    }
-//    
-//    guard var splitComplex, let floatBuffer = buffer.floatChannelData else {
-//      return nil
-//    }
-//    
-//    // Convert the audio buffer to a float array
-//    var audioBuffer = Array(UnsafeBufferPointer(start: floatBuffer[0], count: bufferSize))
-//    
-//    let fftLength = vDSP_Length(floor(log2(Float(length))))
-//    guard let fftSetup = vDSP_create_fftsetup(fftLength, FFTRadix(kFFTRadix2)) else {
-//      return nil
-//    }
-//    
-//    // perform the FFT
-//    audioBuffer.withUnsafeMutableBufferPointer { bufferPointer in
-//      vDSP_fft_zip(fftSetup, &splitComplex, 1, fftLength, FFTDirection(FFT_FORWARD))
-//    }
-//    // clean
-//    vDSP_destroy_fftsetup(fftSetup)
-//    
-//    // extract the result
-//    let realPart = splitComplex.realp
-//    let real = Array(UnsafeBufferPointer(start: realPart, count: length))
-//    let imaginaryPart = splitComplex.imagp
-//    let imaginary = Array(UnsafeBufferPointer(start: imaginaryPart, count: length))
-//    
-//    return (real, imaginary)
-//  }
-
   public func performFFT(_ buffer: AVAudioPCMBuffer) -> [Float]? {
     let bufferSize = buffer.frameLength
     let log2n = UInt(round(log2(Double(bufferSize))))
