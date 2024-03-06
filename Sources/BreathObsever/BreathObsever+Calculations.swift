@@ -85,12 +85,12 @@ extension BreathObsever {
   // Get Power Spectral Density
   func singleWindowWelchPeriodogram(of data: [Float]) -> [Float] {
     let windowSize = data.count
-    let overlap = 0  // No overlap since we're using a single window
+    //let overlap = 0  // No overlap since we're using a single window
     
     var psd = [Float](repeating: 0.0, count: windowSize / 2)
     
     // Apply Hanning window to the entire data array
-    var windowedData = applyHanningWindow(data)
+    let windowedData = applyHanningWindow(data)
     
     // Perform FFT on the entire windowed data
     var realParts = [Float](repeating: 0, count: windowSize)
@@ -101,7 +101,7 @@ extension BreathObsever {
         
         var splitComplex = DSPSplitComplex(realp: realPtr.baseAddress!, imagp: imagPtr.baseAddress!)
         
-        data.withUnsafeBytes {
+        windowedData.withUnsafeBytes {
           vDSP.convert(
             interleavedComplexVector: [DSPComplex]($0.bindMemory(to: DSPComplex.self)),
             toSplitComplexVector: &splitComplex
