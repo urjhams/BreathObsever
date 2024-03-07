@@ -49,6 +49,8 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
     
     DispatchQueue.main.async { [unowned self] in
       let amplitude = timeDomainBuffer.reduce(0.0) { max($0, abs($1)) }
+//      // the envelopAmplitude is the uper envelop so we get the
+//      let envelopAmplitude = timeDomainBuffer.reduce(0.0) { max($0, $1) }
       let threshold: Float = 2000
       amplitudeSubject.send(amplitude > threshold ? threshold : amplitude)
     }

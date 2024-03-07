@@ -15,8 +15,10 @@ public class BreathObsever: NSObject, ObservableObject {
   /// The sample rate (44,1 Khz is common): 24Khz on airpod pro
   public static let sampleRate = 24000.0 //44100.0
   
-  /// The number of sample per frame
+  /// The number of sample per frame  (must be power of 2)
   public static let samples = 512
+  
+  /// use for overlaping (should be halp of the samples)
   public static let hopCount = 256
   
   let forwardDCT = vDSP.DCT(count: samples, transformType: .II)!
@@ -96,12 +98,23 @@ extension BreathObsever {
     // convert the buffer data to the timeDomainBuffer
     vDSP.convertElements(of: values, to: &timeDomainBuffer)
     
+    // TODO: downsample the data 24 times to get the single data frame of 24 kHz as bellow -> Help to downsample to 1000 Hz
+//    let filterLength = 2
+//    let filter = [Float](repeating: 1 / Float(filterLength), count: filterLength)
+//    var copy = values.map { Float($0) }
+//    let downsampled = vDSP.downsample(timeDomainBuffer, decimationFactor: 24, filter: filter)
     
     // apply Hanning window to smoothing the data
     vDSP.multiply(timeDomainBuffer, hanningWindow, result: &timeDomainBuffer)
     
-    // get the abs value as amplitudes
+    // TODO: get rms as the amplitude envelope
+    // let rms = vDSP.rootMesanSquare(timeDomainBuffer)
+    
+    // TODO: store that rms into a stacking array buffer, when it higher than 5000 (5 seconds of  1 kHz), apply HanningWindow on it, then downsample it to 10Hz, then extract PSD then -> Respiratory rate for that 5 seconds
+    
+    // get the abs value as amplitudes (as max abs), to use in the debug view
     vDSP.absolute(timeDomainBuffer, result: &timeDomainBuffer)
+    
   }
 }
 
