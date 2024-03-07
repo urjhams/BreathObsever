@@ -63,9 +63,11 @@ public class BreathObsever: NSObject, ObservableObject {
     autoreleaseFrequency: .workItem
   )
   
+  public static let windowTime = 5
+  
   /// samples limit at the point where we reach this limit, we apply the respiratory rate calculation
   /// (each 5 seconds)
-  public static let samplesLimit = sampleRate * 5
+  public static let samplesLimit = sampleRate * Double(windowTime)
   
   public override init() { 
     super.init()
