@@ -93,7 +93,6 @@ public class BreathObsever: NSObject, ObservableObject {
 
 extension BreathObsever {
   func processData(values: [Int16]) {
-    print(values)
     // convert the buffer data to the timeDomainBuffer
     vDSP.convertElements(of: values, to: &timeDomainBuffer)
     
@@ -103,7 +102,6 @@ extension BreathObsever {
     
     // get the abs value as amplitudes
     vDSP.absolute(timeDomainBuffer, result: &timeDomainBuffer)
-    
   }
 }
 
@@ -117,10 +115,10 @@ extension BreathObsever {
   private func configureCaptureSession() {
     session = AVCaptureSession()
     
-    // bandpass filter at 10 to 1000 Hz
+    // bandpass filter at 500 to 5000 Hz
     let bandpassFilter = AVAudioUnitEQ(numberOfBands: 1)
-    let topFrequency: Float = 1000 // in Hz
-    let bottomFrequency: Float = 10  // in Hz
+    let topFrequency: Float = 5000 // in Hz
+    let bottomFrequency: Float = 500  // in Hz
     let centerFrequency = (topFrequency + bottomFrequency) / 2
     let bandWidth = centerFrequency / (topFrequency - bottomFrequency)
     bandpassFilter.bands[0].filterType = .bandPass
