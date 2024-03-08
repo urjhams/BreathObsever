@@ -138,8 +138,8 @@ extension BreathObsever {
     
     // bandpass filter at 500 to 5000 Hz
     let bandpassFilter = AVAudioUnitEQ(numberOfBands: 1)
-    let topFrequency: Float = 5000 // in Hz
-    let bottomFrequency: Float = 500  // in Hz
+    let topFrequency: Float = 600 // in Hz
+    let bottomFrequency: Float = 20  // in Hz
     let centerFrequency = (topFrequency + bottomFrequency) / 2
     let bandWidth = centerFrequency / (topFrequency - bottomFrequency)
     bandpassFilter.bands[0].filterType = .bandPass
