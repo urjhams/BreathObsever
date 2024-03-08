@@ -53,7 +53,7 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
       processData(values: dataToProcess)
     }
     
-    DispatchQueue.main.async { [unowned self] in
+  Task { @MainActor [unowned self] in
 //      let amplitude = timeDomainBuffer.reduce(0.0) { max($0, abs($1)) }
       let amplitude = vDSP.rootMeanSquare(timeDomainBuffer)
 //      // the envelopAmplitude is the uper envelop so we get the
