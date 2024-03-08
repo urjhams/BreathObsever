@@ -118,7 +118,7 @@ extension BreathObsever {
 //    let rms = calculateRMS(from: dataToProcess)
     
     // get the abs value as amplitudes (as max abs), to use in the debug view
-    vDSP.absolute(timeDomainBuffer, result: &timeDomainBuffer)
+//    vDSP.absolute(timeDomainBuffer, result: &timeDomainBuffer)
     
     // TODO: store the amplitude into a stacking array buffer, when it higher than 5000 (5 seconds of  1 kHz), apply HanningWindow on it, then downsample it to 10Hz, then extract PSD then -> Respiratory rate for that 5 seconds (Should we overlap that stacking array buffer ?, maybe we don't need because we apply the overlap already before run this function)
     
