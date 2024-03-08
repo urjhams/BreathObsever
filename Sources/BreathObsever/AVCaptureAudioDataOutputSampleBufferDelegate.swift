@@ -53,9 +53,26 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
       processData(values: dataToProcess)
     }
     
-  Task { @MainActor [unowned self] in
+    Task { @MainActor [unowned self] in
 //      let amplitude = timeDomainBuffer.reduce(0.0) { max($0, abs($1)) }
       let amplitude = vDSP.rootMeanSquare(timeDomainBuffer)
+      
+      // TODO: calculate the respiratory rate and send it to the `respiratoryRate` via `accumulatedAmplitudes`
+      amplitudeLoopCounter += 1
+      if 1 ... accumulatedAmplitudes.count ~= amplitudeLoopCounter {
+        switch amplitudeLoopCounter {
+        case accumulatedAmplitudes.count - 1:
+          // reset the coutner
+          amplitudeLoopCounter = 0
+          // TODO: calculate the respiratory rate from `accumulatedAmplitudes`
+          
+        default:
+          // set the amplitude at coressponding index in the container
+          let indexToChange = amplitudeLoopCounter - 1
+          accumulatedAmplitudes[indexToChange] = amplitude
+        }
+      }
+      
 //      // the envelopAmplitude is the uper envelop so we get the
 //      let envelopAmplitude = timeDomainBuffer.reduce(0.0) { max($0, $1) }
       let threshold: Float = 2000

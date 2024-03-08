@@ -39,6 +39,14 @@ public class BreathObsever: NSObject, ObservableObject {
   /// values.
   var timeDomainBuffer = [Float](repeating: 0, count: samples)
   
+  /// 512 samples with 24000 hz -> there are aroudn 47 frames in the looping each 1 second
+  static let amplitudesPerSec = 47
+  
+  var amplitudeLoopCounter = 0
+  /// The container that store the amplitudes value of each frame until we filled enough for 5 seconds data
+  /// to calculate the respiratory rate.
+  var accumulatedAmplitudes = [Float](repeating: 0, count: amplitudesPerSec * 5)
+  
   /*
    The main parts of the capture architecture are sessions, inputs, and outputs:
    Capture sessions connect one or more inputs to one or more outputs. Inputs are sources of media,
@@ -92,6 +100,9 @@ public class BreathObsever: NSObject, ObservableObject {
   /// The sujbect that recieves the latest data of audio power in decibel
   public var powerSubject = PassthroughSubject<Float, Never>()
   
+  /// The subject that recieves the latest data of calculated respiratory rate
+  public var respiratoryRate = CurrentValueSubject<Float, Error>(0.0)
+  
 }
 
 extension BreathObsever {
@@ -107,15 +118,6 @@ extension BreathObsever {
     
     // apply Hanning window to smoothing the data
     vDSP.multiply(timeDomainBuffer, hanningWindow, result: &timeDomainBuffer)
-    
-    // TODO: get rms as the amplitude envelope (?)
-//    func calculateRMS(from samples: [Int16]) -> Double {
-//      let squaredSamples = samples.map { Double($0 * $0) } // Square each sample
-//      let sumOfSquares = squaredSamples.reduce(0, +) // Sum all squared values
-//      let meanSquare = sumOfSquares / Double(samples.count) // Average squared value
-//      return sqrt(meanSquare) // Take the square root to get RMS
-//    }
-//    let rms = calculateRMS(from: dataToProcess)
     
     // get the abs value as amplitudes (as max abs), to use in the debug view
 //    vDSP.absolute(timeDomainBuffer, result: &timeDomainBuffer)
