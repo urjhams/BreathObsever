@@ -21,8 +21,9 @@ public class BreathObsever: NSObject, ObservableObject {
   /// use for overlaping (should be halp of the samples)
   public static let hopCount = 256
   
-  let forwardDCT = vDSP.DCT(count: samples, transformType: .II)!
-  
+  /// The flag that indcate the data is collecting
+  public private(set) var collectingData = false
+    
   /// The window sequence for normalizing
   let hanningWindow = vDSP.window(
     ofType: Float.self,
@@ -98,7 +99,7 @@ extension BreathObsever {
     // convert the buffer data to the timeDomainBuffer
     vDSP.convertElements(of: values, to: &timeDomainBuffer)
     
-    // TODO: downsample the data 24 times to get the single data frame of 24 kHz as bellow -> Help to downsample to 1000 Hz
+    // TODO: downsample the data 24 times to get the single data frame of 24 kHz as bellow -> Help to downsample to 1000 Hz -> this should be now only 22 samples per frame
 //    let filterLength = 2
 //    let filter = [Float](repeating: 1 / Float(filterLength), count: filterLength)
 //    var copy = values.map { Float($0) }
@@ -107,14 +108,21 @@ extension BreathObsever {
     // apply Hanning window to smoothing the data
     vDSP.multiply(timeDomainBuffer, hanningWindow, result: &timeDomainBuffer)
     
-    // TODO: get rms as the amplitude envelope
-    // let rms = vDSP.rootMesanSquare(timeDomainBuffer)
-    
-    // TODO: store that rms into a stacking array buffer, when it higher than 5000 (5 seconds of  1 kHz), apply HanningWindow on it, then downsample it to 10Hz, then extract PSD then -> Respiratory rate for that 5 seconds
+    // TODO: get rms as the amplitude envelope (?)
+//    func calculateRMS(from samples: [Int16]) -> Double {
+//      let squaredSamples = samples.map { Double($0 * $0) } // Square each sample
+//      let sumOfSquares = squaredSamples.reduce(0, +) // Sum all squared values
+//      let meanSquare = sumOfSquares / Double(samples.count) // Average squared value
+//      return sqrt(meanSquare) // Take the square root to get RMS
+//    }
+//    let rms = calculateRMS(from: dataToProcess)
     
     // get the abs value as amplitudes (as max abs), to use in the debug view
     vDSP.absolute(timeDomainBuffer, result: &timeDomainBuffer)
     
+    // TODO: store the amplitude into a stacking array buffer, when it higher than 5000 (5 seconds of  1 kHz), apply HanningWindow on it, then downsample it to 10Hz, then extract PSD then -> Respiratory rate for that 5 seconds (Should we overlap that stacking array buffer ?, maybe we don't need because we apply the overlap already before run this function)
+    
+    // TODO: shall we use both amplitude for graph (or respiratory cycle) and respiratory rate?
   }
 }
 
@@ -174,7 +182,7 @@ extension BreathObsever {
     session.beginConfiguration()
     #if os(macOS)
     audioOutput.audioSettings = [
-      AVSampleRateKey: 24000, // 24 Khz is the sample rate of Apple's airpod
+      AVSampleRateKey: Self.sampleRate, // 24 Khz is the sample rate of Apple's airpod
       AVFormatIDKey: kAudioFormatLinearPCM,
       AVLinearPCMIsFloatKey: false,
       AVLinearPCMBitDepthKey: 16,
@@ -220,13 +228,18 @@ extension BreathObsever {
 
 extension BreathObsever {
   public func startAnalyzing() throws {
-    try sessionQueue.asyncAndWait {
-      [weak self] in
+    try sessionQueue.asyncAndWait { [weak self] in
       guard case .authorized = AVCaptureDevice.authorizationStatus(for: .audio) else {
         return
       }
       self?.session?.startRunning()
       try self?.audioEngine?.start()
+      
+      // Wait for one seconds and set the flag to true to start collecting data
+      // since the first few pack of Data normally contain loss
+      self?.sessionQueue.asyncAfter(deadline: .now() + 1) {
+        self?.collectingData = true
+      }
     }
   }
   
@@ -234,6 +247,7 @@ extension BreathObsever {
     sessionQueue.async { [weak self] in
       self?.session?.stopRunning()
       self?.audioEngine?.stop()
+      self?.collectingData = false
     }
   }
 }

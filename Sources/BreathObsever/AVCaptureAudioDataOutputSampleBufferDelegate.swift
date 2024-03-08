@@ -6,6 +6,11 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
     didOutput sampleBuffer: CMSampleBuffer,
     from connection: AVCaptureConnection
   ) {
+    
+    guard collectingData else {
+      return
+    }
+    
     var audioBufferList = AudioBufferList()
     var blockBuffer: CMBlockBuffer?
     CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
