@@ -10,9 +10,8 @@ samples = sys.argv[1].split(',')
 # (In time domain)
 downsampled = signal.resample(samples, 5000)
 
+# extract the signal envelope using hilbert transform
 envelope = np.abs(signal.hilbert(downsampled))
-
-envelope = np.abs(signal.hilbert(samples))
 
 fs = 1000  # Sampling frequency in Hz
 t = np.arange(0, 10, 1/fs)  # Time array for 5 seconds
@@ -39,8 +38,10 @@ downSampled2 = signal.resample(windowed, 50)
 # apply Welch perdiogram to estimate power spectral density
 frequencyArray, psd = signal.welch(downSampled2, 10, nperseg = 50)
 
+# find the peaks from the psd
 peaks, _ = signal.find_peaks(psd)
 
+# the highest peak represent the respiratory rate
 respiratoryRate = peaks.max()
 
 command = f'echo {respiratoryRate}'
