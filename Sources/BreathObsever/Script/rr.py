@@ -11,15 +11,10 @@ def low_pass_filter(data, band_limit, sampling_rate):
      F[cutoff_index + 1:] = 0
      return np.fft.irfft(F, n=data.size).real
 
-# downsample to 1000 Hz. because the input was the sample worth of 24 kHz in 5 seconds
-# we want to downsample it into 1000 Hz of 5 seconds, which is 5000
-# (In time domain)
-downsampled = signal.resample(samples, 5000)
-
-envelope = np.abs(signal.hilbert(downsampled))
+envelope = np.abs(signal.hilbert(samples))
 
 fs = 1000  # Sampling frequency in Hz
-t = np.arange(0, 5, 1/fs)  # Time array for 5 seconds
+t = np.arange(0, 10, 1/fs)  # Time array for 5 seconds
 
 # Define lowpass filter parameters
 cutoff_freq = 2  # Cutoff frequency in Hz
@@ -38,10 +33,10 @@ window = np.hanning(len(filtered))
 windowed = filtered * window
 
 # now downsample to 10 Hz
-downSampled2 = signal.resample(windowed, 50)
+downSampled2 = signal.resample(windowed, 100)
 
 # apply Welch perdiogram to estimate power spectral density
-frequencyArray, psd = signal.welch(downSampled2, 10, nperseg = 50)
+frequencyArray, psd = signal.welch(downSampled2, 10, nperseg = 100)
 
 peaks, _ = signal.find_peaks(psd)
 

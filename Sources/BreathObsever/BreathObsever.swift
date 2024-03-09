@@ -32,7 +32,7 @@ public class BreathObsever: NSObject, ObservableObject {
     isHalfWindow: false
   )
   
-  static let samplesToCalculate = sampleRate * 5
+  static let samplesToCalculate = sampleRate * 10
   
   /// A buffer that contains the raw audio data from AVFoundation.
   var rawAudioData = [Int16]()
@@ -42,6 +42,9 @@ public class BreathObsever: NSObject, ObservableObject {
   /// A reusable array that contains the current frame of time-domain audio data as single-precision
   /// values.
   var timeDomainBuffer = [Float](repeating: 0, count: samples)
+  
+  /// A Reuseable array that contain the samples worth of 5 seconds audio data in time-domain
+  var timeDomain10SecBuffer = [Float](repeating: 0, count: Int(samplesToCalculate))
   
   /// 512 samples with 24000 hz -> there are aroudn 47 frames in the looping each 1 second
   static let amplitudesPerSec = 47
@@ -114,30 +117,25 @@ extension BreathObsever {
     // convert the buffer data to the timeDomainBuffer
     vDSP.convertElements(of: values, to: &timeDomainBuffer)
     
-    // TODO: downsample the data 24 times to get the single data frame of 24 kHz as bellow -> Help to downsample to 1000 Hz -> this should be now only 22 samples per frame
-//    let filterLength = 2
-//    let filter = [Float](repeating: 1 / Float(filterLength), count: filterLength)
-//    var copy = values.map { Float($0) }
-//    let downsampled = vDSP.downsample(timeDomainBuffer, decimationFactor: 24, filter: filter)
-    
     // apply Hanning window to smoothing the data
     vDSP.multiply(timeDomainBuffer, hanningWindow, result: &timeDomainBuffer)
-    
-    // get the abs value as amplitudes (as max abs), to use in the debug view
-//    vDSP.absolute(timeDomainBuffer, result: &timeDomainBuffer)
-    
-    // TODO: store the amplitude into a stacking array buffer, when it higher than 5000 (5 seconds of  1 kHz), apply HanningWindow on it, then downsample it to 10Hz, then extract PSD then -> Respiratory rate for that 5 seconds (Should we overlap that stacking array buffer ?, maybe we don't need because we apply the overlap already before run this function)
-    
-    // TODO: shall we use both amplitude for graph (or respiratory cycle) and respiratory rate?
   }
 }
 
 extension BreathObsever {
   func calculateRespiratoryRate(from data: [Int16]) {
+    
+    // Downsample to 1000 Hz
+    vDSP.convertElements(of: data, to: &timeDomain10SecBuffer)
+    let filterLength = 2
+    let filter = [Float](repeating: 1 / Float(filterLength), count: filterLength)
+    let downsampled = vDSP.downsample(timeDomain10SecBuffer, decimationFactor: 24, filter: filter)
+    
     guard let scriptPath = Bundle.module.path(forResource: "rr", ofType: "py") else {
       return
     }
-    let parameter = data.map(String.init).joined(separator: ",")
+    
+    let parameter = downsampled.map { String($0) }.joined(separator: ",")
     
     let command = "python3 \(scriptPath) \(parameter)"
     
