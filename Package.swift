@@ -22,7 +22,9 @@ let package = Package(
         // Targets can depend on other targets in this package, and on products in packages this package depends on.
         .target(
             name: "BreathObsever",
-            dependencies: []),
+            dependencies: [],
+            resources: [.copy("Script/rr.py")]
+        ),
         .testTarget(
             name: "BreathObseverTests",
             dependencies: ["BreathObsever"]

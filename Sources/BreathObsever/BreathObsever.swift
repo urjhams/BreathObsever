@@ -32,8 +32,12 @@ public class BreathObsever: NSObject, ObservableObject {
     isHalfWindow: false
   )
   
+  static let samplesToCalculate = sampleRate * 5
+  
   /// A buffer that contains the raw audio data from AVFoundation.
   var rawAudioData = [Int16]()
+  
+  var rawBufferAudioData = [Int16]()
   
   /// A reusable array that contains the current frame of time-domain audio data as single-precision
   /// values.
@@ -125,6 +129,40 @@ extension BreathObsever {
     // TODO: store the amplitude into a stacking array buffer, when it higher than 5000 (5 seconds of  1 kHz), apply HanningWindow on it, then downsample it to 10Hz, then extract PSD then -> Respiratory rate for that 5 seconds (Should we overlap that stacking array buffer ?, maybe we don't need because we apply the overlap already before run this function)
     
     // TODO: shall we use both amplitude for graph (or respiratory cycle) and respiratory rate?
+  }
+}
+
+extension BreathObsever {
+  func calculateRespiratoryRate(from data: [Int16]) {
+    guard let scriptPath = Bundle.module.path(forResource: "rr", ofType: "py") else {
+      return
+    }
+    let parameter = data.map(String.init).joined(separator: ",")
+    
+    // mac M1 default python (installed by homebrew): "/usr/local/bin/python3"
+    // this is the python we installed via x86_64 context
+    let python = "/usr/local/homebrew/bin/python3.10"
+    
+    let command = "\(python) \(scriptPath) \(parameter)"
+    
+    let process = Process()
+    // progress configuration
+    process.arguments = ["-c", command]
+    process.executableURL = URL(fileURLWithPath: "/bin/zsh")
+    
+    let outputPipe = Pipe()
+    
+    process.standardOutput = outputPipe
+    do {
+      try process.run()
+      if let outputData = try outputPipe.fileHandleForReading.readToEnd() {
+        
+        let output = String(decoding: outputData, as: UTF8.self).replacingOccurrences(of: "\n", with: "")
+        print(output)
+      }
+    } catch {
+      print(error.localizedDescription)
+    }
   }
 }
 

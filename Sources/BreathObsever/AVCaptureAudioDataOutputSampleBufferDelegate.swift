@@ -2,7 +2,7 @@ import AVFoundation
 import Accelerate
 
 extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
-  public func captureOutput(
+  @MainActor public func captureOutput(
     _ output: AVCaptureOutput,
     didOutput sampleBuffer: CMSampleBuffer,
     from connection: AVCaptureConnection
@@ -33,12 +33,24 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
     /// 512 samples, the app adds the contents of each audio sample buffer to `rawAudioData`.
     ///
     /// The following code creates an array from `data` and appends it to  `rawAudioData`:
-    if rawAudioData.count < Self.samples * 2 {
+    if rawBufferAudioData.count < Self.samples * 2 {
       let actualSampleCount = CMSampleBufferGetNumSamples(sampleBuffer)
       let pointer = data.bindMemory(to: Int16.self, capacity: actualSampleCount)
       let buffer = UnsafeMutableBufferPointer(start: pointer, count: actualSampleCount)
       
-      rawAudioData.append(contentsOf: buffer)
+      rawBufferAudioData.append(contentsOf: buffer)
+    }
+    
+    let actualSampleCount = CMSampleBufferGetNumSamples(sampleBuffer)
+    let pointer = data.bindMemory(to: Int16.self, capacity: actualSampleCount)
+    let buffer = UnsafeMutableBufferPointer(start: pointer, count: actualSampleCount)
+
+    rawAudioData.append(contentsOf: buffer)
+    
+    let limit = Int(Self.samplesToCalculate)
+    while rawAudioData.count > limit {
+      calculateRespiratoryRate(from: rawAudioData)
+      rawAudioData.removeFirst(limit / 2)
     }
     
     /// The following code app passes the first `sampleCount`elements of raw audio data to the
@@ -47,9 +59,9 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
     ///
     /// By removing fewer elements than each step processes, the rendered frames of data overlap,
     /// ensuring no loss of audio data.
-    while rawAudioData.count >= Self.samples {
-      let dataToProcess = Array(rawAudioData[0 ..< Self.samples])
-      rawAudioData.removeFirst(Self.hopCount)
+    while rawBufferAudioData.count >= Self.samples {
+      let dataToProcess = Array(rawBufferAudioData[0 ..< Self.samples])
+      rawBufferAudioData.removeFirst(Self.hopCount)
       processData(values: dataToProcess)
     }
     
