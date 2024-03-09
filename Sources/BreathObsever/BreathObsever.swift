@@ -34,19 +34,17 @@ public class BreathObsever: NSObject, ObservableObject {
   
   static let samplesToCalculate = sampleRate * 10
   
-  /// A buffer that contains the raw audio data from AVFoundation.
+  /// A buffer that contains the raw audio data from AVFoundation that used to calculate the respiratory rate
   var rawAudioData = [Int16]()
   
+  /// A buffer that contains the raw audio data from AVFoundation that used to present the amplitude
   var rawBufferAudioData = [Int16]()
   
   /// A reusable array that contains the current frame of time-domain audio data as single-precision
   /// values.
   var timeDomainBuffer = [Float](repeating: 0, count: samples)
   
-  /// A Reuseable array that contain the samples worth of 5 seconds audio data in time-domain
-  var timeDomain10SecBuffer = [Float](repeating: 0, count: Int(samplesToCalculate))
-  
-  /// 512 samples with 24000 hz -> there are aroudn 47 frames in the looping each 1 second
+  /// 512 samples with 24000 hz -> there are approximately 47 frames in the looping each 1 second
   static let amplitudesPerSec = 47
   
   var amplitudeLoopCounter = 0
@@ -125,17 +123,11 @@ extension BreathObsever {
 extension BreathObsever {
   func calculateRespiratoryRate(from data: [Int16]) {
     
-    // Downsample to 1000 Hz
-    vDSP.convertElements(of: data, to: &timeDomain10SecBuffer)
-    let filterLength = 2
-    let filter = [Float](repeating: 1 / Float(filterLength), count: filterLength)
-    let downsampled = vDSP.downsample(timeDomain10SecBuffer, decimationFactor: 24, filter: filter)
-    
     guard let scriptPath = Bundle.module.path(forResource: "rr", ofType: "py") else {
       return
     }
     
-    let parameter = downsampled.map { String($0) }.joined(separator: ",")
+    let parameter = data.map { String($0) }.joined(separator: ",")
     
     let command = "python3 \(scriptPath) \(parameter)"
     
@@ -151,8 +143,13 @@ extension BreathObsever {
       try process.run()
       if let outputData = try outputPipe.fileHandleForReading.readToEnd() {
         
-        let output = String(decoding: outputData, as: UTF8.self).replacingOccurrences(of: "\n", with: "")
-        print(output)
+        let output = String(decoding: outputData, as: UTF8.self)
+          .replacingOccurrences(of: "\n", with: "")
+        
+        DispatchQueue.main.async {
+          // TODO: put this into current value of respiratory rate
+          print(output)
+        }
       }
     } catch {
       print(error.localizedDescription)

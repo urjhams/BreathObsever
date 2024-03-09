@@ -5,11 +5,12 @@ import numpy as np
 
 samples = sys.argv[1].split(',')
 
-def low_pass_filter(data, band_limit, sampling_rate):
-     cutoff_index = int(band_limit * data.size / sampling_rate)
-     F = np.fft.rfft(data)
-     F[cutoff_index + 1:] = 0
-     return np.fft.irfft(F, n=data.size).real
+# downsample to 1000 Hz. because the input was the sample worth of 24 kHz in 5 seconds
+# we want to downsample it into 1000 Hz of 5 seconds, which is 5000
+# (In time domain)
+downsampled = signal.resample(samples, 5000)
+
+envelope = np.abs(signal.hilbert(downsampled))
 
 envelope = np.abs(signal.hilbert(samples))
 
@@ -33,10 +34,10 @@ window = np.hanning(len(filtered))
 windowed = filtered * window
 
 # now downsample to 10 Hz
-downSampled2 = signal.resample(windowed, 100)
+downSampled2 = signal.resample(windowed, 50)
 
 # apply Welch perdiogram to estimate power spectral density
-frequencyArray, psd = signal.welch(downSampled2, 10, nperseg = 100)
+frequencyArray, psd = signal.welch(downSampled2, 10, nperseg = 50)
 
 peaks, _ = signal.find_peaks(psd)
 

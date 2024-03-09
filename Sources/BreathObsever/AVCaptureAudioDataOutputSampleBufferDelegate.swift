@@ -30,9 +30,9 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
     
     /// Because the audio spectrogram code requires exactly `sampleCount` (which the app defines
     /// as 512) samples, but audio sample buffers from AVFoundation may not always contain exactly
-    /// 512 samples, the app adds the contents of each audio sample buffer to `rawAudioData`.
+    /// 512 samples, the app adds the contents of each audio sample buffer to `rawBufferAudioData`.
     ///
-    /// The following code creates an array from `data` and appends it to  `rawAudioData`:
+    /// The following code creates an array from `data` and appends it to  `rawBufferAudioData`:
     if rawBufferAudioData.count < Self.samples * 2 {
       let actualSampleCount = CMSampleBufferGetNumSamples(sampleBuffer)
       let pointer = data.bindMemory(to: Int16.self, capacity: actualSampleCount)
@@ -41,12 +41,13 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
       rawBufferAudioData.append(contentsOf: buffer)
     }
     
+    /// Addpend value to `rawAudioData`
     let actualSampleCount = CMSampleBufferGetNumSamples(sampleBuffer)
     let pointer = data.bindMemory(to: Int16.self, capacity: actualSampleCount)
     let buffer = UnsafeMutableBufferPointer(start: pointer, count: actualSampleCount)
-
     rawAudioData.append(contentsOf: buffer)
     
+    /// Calculate respiratory rate when `rawAudioData` reached the number of sample that worth 5 seconds (overlapping 2.5 seconds)
     let limit = Int(Self.samplesToCalculate)
     while rawAudioData.count > limit {
       let dataToProcess = Array(rawAudioData[0 ..< Int(Self.samplesToCalculate)])
@@ -58,7 +59,7 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
     
     /// The following code app passes the first `sampleCount`elements of raw audio data to the
     /// `processData(values:)` function, and removes the first `hopCount` elements from
-    /// `rawAudioData`.
+    /// `rawBufferAudioData`.
     ///
     /// By removing fewer elements than each step processes, the rendered frames of data overlap,
     /// ensuring no loss of audio data.
@@ -68,19 +69,16 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
       processData(values: dataToProcess)
     }
     
+    // update the amplitude visual
     Task { @MainActor [unowned self] in
-//      let amplitude = timeDomainBuffer.reduce(0.0) { max($0, abs($1)) }
       let amplitude = vDSP.rootMeanSquare(timeDomainBuffer)
       
-      // TODO: calculate the respiratory rate and send it to the `respiratoryRate` via `accumulatedAmplitudes`
       amplitudeLoopCounter += 1
       if 1 ... accumulatedAmplitudes.count ~= amplitudeLoopCounter {
         switch amplitudeLoopCounter {
         case accumulatedAmplitudes.count - 1:
           // reset the coutner
           amplitudeLoopCounter = 0
-          // TODO: calculate the respiratory rate from `accumulatedAmplitudes`
-          
         default:
           // set the amplitude at coressponding index in the container
           let indexToChange = amplitudeLoopCounter - 1
@@ -88,8 +86,6 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
         }
       }
       
-//      // the envelopAmplitude is the uper envelop so we get the
-//      let envelopAmplitude = timeDomainBuffer.reduce(0.0) { max($0, $1) }
       let threshold: Float = 2000
       amplitudeSubject.send(amplitude > threshold ? threshold : amplitude)
     }
