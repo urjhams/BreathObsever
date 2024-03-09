@@ -139,11 +139,7 @@ extension BreathObsever {
     }
     let parameter = data.map(String.init).joined(separator: ",")
     
-    // mac M1 default python (installed by homebrew): "/usr/local/bin/python3"
-    // this is the python we installed via x86_64 context
-    let python = "/usr/local/homebrew/bin/python3.10"
-    
-    let command = "\(python) \(scriptPath) \(parameter)"
+    let command = "python3 \(scriptPath) \(parameter)"
     
     let process = Process()
     // progress configuration

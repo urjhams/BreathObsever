@@ -49,6 +49,7 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
     
     let limit = Int(Self.samplesToCalculate)
     while rawAudioData.count > limit {
+      // TODO: run this in a seperate background thread
       calculateRespiratoryRate(from: rawAudioData)
       rawAudioData.removeFirst(limit / 2)
     }
