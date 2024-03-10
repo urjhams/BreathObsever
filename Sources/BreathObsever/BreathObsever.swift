@@ -148,6 +148,7 @@ extension BreathObsever {
         
         DispatchQueue.main.async {
           // TODO: put this into current value of respiratory rate
+          // TODO: at the time of call this function, send a nil value to passthrough subject, temporary put that into dataStorage array. When the actual output returned, send that value to passthrough subject again. So when revieved, if the value not nil and there is the nil value stand at the last of the array in dataStorage, replace it with that non-nil value. Otherwise, just append as normal
           print(output)
         }
       }

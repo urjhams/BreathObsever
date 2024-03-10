@@ -71,7 +71,8 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
     
     // update the amplitude visual
     Task { @MainActor [unowned self] in
-      let amplitude = vDSP.rootMeanSquare(timeDomainBuffer)
+      let amplitude = timeDomainBuffer        //vDSP.rootMeanSquare(timeDomainBuffer)
+        .reduce(0.0) { max($0, abs($1)) }
       
       amplitudeLoopCounter += 1
       if 1 ... accumulatedAmplitudes.count ~= amplitudeLoopCounter {
