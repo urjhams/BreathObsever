@@ -21,6 +21,10 @@ public class BreathObsever: NSObject, ObservableObject {
   /// use for overlaping (should be halp of the samples)
   public static let hopCount = 256
   
+  var counter = 0
+  
+  public static let processingSamples = 46 * 5
+  
   /// The flag that indcate the data is collecting
   public private(set) var collectingData = false
     
@@ -32,7 +36,14 @@ public class BreathObsever: NSObject, ObservableObject {
     isHalfWindow: false
   )
   
-  static let samplesToCalculate = sampleRate * 10
+  let processingHanningWindow = vDSP.window(
+    ofType: Float.self,
+    usingSequence: .hanningNormalized,
+    count: processingSamples,
+    isHalfWindow: false
+  )
+  
+  static let samplesToCalculate = sampleRate * 5
   
   /// A buffer that contains the raw audio data from AVFoundation that used to calculate the respiratory rate
   var rawAudioData = [Int16]()
@@ -43,6 +54,8 @@ public class BreathObsever: NSObject, ObservableObject {
   /// A reusable array that contains the current frame of time-domain audio data as single-precision
   /// values.
   var timeDomainBuffer = [Float](repeating: 0, count: samples)
+  
+  var processingBuffer = [Float](repeating: 0, count: processingSamples)
   
   /*
    The main parts of the capture architecture are sessions, inputs, and outputs:
@@ -107,7 +120,7 @@ extension BreathObsever {
 }
 
 extension BreathObsever {
-  func calculateRespiratoryRate(from data: [Int16]) {
+  func calculateRespiratoryRate(from data: [Float]) {
     
     guard let scriptPath = Bundle.module.path(forResource: "rr", ofType: "py") else {
       return
@@ -134,17 +147,25 @@ extension BreathObsever {
           .replacingOccurrences(of: "\n", with: "")
         
         DispatchQueue.main.async { [weak self] in
-                    
+                              
           guard let self, let frequency = Double(output) else {
             return
           }
           
-          var rr = UInt8(1 / frequency)
+          var rr = Int(60 * frequency)
           
-          rr = rr < 12 ? 12 : rr
-          rr = rr > 25 ? 25 : rr
+//          rr = rr < 12 ? 12 : rr
           
-          respiratoryRate.send(rr)
+          rr = rr > 24 ? 24 : rr
+          
+          print(rr)
+//
+//          var rr = UInt8(1 / frequency)
+//          
+//          rr = rr < 12 ? 12 : rr
+//          rr = rr > 25 ? 25 : rr
+          
+//          respiratoryRate.send(rr)
         }
       }
     } catch {
