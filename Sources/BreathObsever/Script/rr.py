@@ -1,49 +1,70 @@
 import os
 import sys
-from scipy import signal    # https://scipy.org/install/
+from scipy.signal import resample, hilbert, butter, filtfilt, welch
 import numpy as np
+
+def arrays_to_txt(originalSamples, envelope, file_path):
+    try:
+        with open(file_path, 'w') as file:
+            sampleStr = "["
+            for item in originalSamples:
+                sampleStr += f'{item},'
+            sampleStr += "]"
+
+            envelopeStr = "["
+            for item in envelope:
+                envelopeStr += f'{item},'
+            envelopeStr += "]"
+
+            file.write(f'{sampleStr}\n')
+            file.write(f'{envelopeStr}\n')
+        print("Arrays have been successfully written to", file_path)
+    except IOError:
+        print("Error: Unable to write to file", file_path)
+
+def findPeakIndex(array):
+    peakIndex = 0
+    currentPeak = -1
+    for index in range(0, len(array) - 1):
+        if array[index] > currentPeak:
+            currentPeak = array[index]
+            peakIndex = index
+    return index
 
 samples = sys.argv[1].split(',')
 
-# downsample to 1000 Hz. because the input was the sample worth of 24 kHz in 5 seconds
-# we want to downsample it into 1000 Hz of 5 seconds, which is 5000
-# (In time domain)
-downsampled = signal.resample(samples, 5000)
+fs = 24000  # Sampling frequency
+t = np.arange(0, 5, 1/fs)  # Time vector
+samples = np.sin(2 * np.pi * 1000 * t)  # Example sinusoidal signal
 
-# extract the signal envelope using hilbert transform
-envelope = np.abs(signal.hilbert(downsampled))
+# Downsample to 1000 Hz
+downsampled_samples = resample(samples, int(len(samples) * (1000 / fs)))
 
-fs = 1000  # Sampling frequency in Hz
-t = np.arange(0, 10, 1/fs)  # Time array for 5 seconds
+# Extract the signal envelope using Hilbert transform
+envelope = np.abs(hilbert(downsampled_samples))
 
-# Define lowpass filter parameters
-cutoff_freq = 2  # Cutoff frequency in Hz
-nyquist_freq = 0.5 * fs  # Nyquist frequency
-normal_cutoff = cutoff_freq / nyquist_freq
+# Apply a low pass filter (2 Hz) to the envelope
+nyquist_freq = 1000 / 2  # Nyquist frequency for 1000 Hz
+cutoff_freq = 2  # Cutoff frequency for the low-pass filter
+b, a = butter(4, cutoff_freq / nyquist_freq, btype='low')
+filtered_envelope = filtfilt(b, a, envelope)
 
-# Design a Butterworth lowpass filter
-order = 4  # Filter order
-b, a = signal.butter(order, normal_cutoff, btype='low', analog=False)
+# Smooth the signal by Hanning moving window
+smoothed_envelope = np.convolve(filtered_envelope, np.hanning(50), mode='same')
 
-# Apply the filter to the signal envelope
-filtered = signal.filtfilt(b, a, envelope)
+# Downsample to 10 Hz
+downsampled_smoothed_envelope = resample(smoothed_envelope, int(len(smoothed_envelope) * (10 / 1000)))
 
-# hanning window to smoothing the filtered
-window = np.hanning(len(filtered))
-windowed = filtered * window
+# Find power spectral density using Welch periodogram
+frequencies, psd = welch(downsampled_smoothed_envelope, fs=10, nperseg=50)
 
-# now downsample to 10 Hz
-downSampled2 = signal.resample(windowed, 50)
+arrays_to_txt(samples, downsampled_smoothed_envelope, '/Users/quandinh/Downloads/result.txt')
 
-# apply Welch perdiogram to estimate power spectral density
-frequencyArray, psd = signal.welch(downSampled2, 10, nperseg = 50)
-
-# find the peaks from the psd
-peaks, _ = signal.find_peaks(psd)
+peak = findPeakIndex(psd)
 
 # the highest peak represent the respiratory rate
-respiratoryRatePeak = peaks.max()
+respiratoryRateFrequency = frequencies[peak]
 
-command = f'echo {respiratoryRatePeak}'
+command = f'echo {respiratoryRateFrequency}'
 
 os.system(command)

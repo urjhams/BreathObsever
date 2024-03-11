@@ -134,14 +134,13 @@ extension BreathObsever {
           .replacingOccurrences(of: "\n", with: "")
         
         DispatchQueue.main.async { [weak self] in
-          // TODO: check the doc of the lowest and highest RR so set the output inside that boundary only.
-          guard let self, let value = UInt8(output) else {
+                    
+          guard let self, let frequency = Double(output) else {
             return
           }
-          var rr = value / 2
           
-          /// The threshold boundary of normal respiratoyr rate is from 12 to 25 per sec
-          /// so we  set the rr to the threshold if it lower or higher the boudaries.
+          var rr = UInt8(1 / frequency)
+          
           rr = rr < 12 ? 12 : rr
           rr = rr > 25 ? 25 : rr
           
