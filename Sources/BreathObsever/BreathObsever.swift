@@ -44,14 +44,6 @@ public class BreathObsever: NSObject, ObservableObject {
   /// values.
   var timeDomainBuffer = [Float](repeating: 0, count: samples)
   
-  /// 512 samples with 24000 hz -> there are approximately 47 frames in the looping each 1 second
-  static let amplitudesPerSec = 47
-  
-  var amplitudeLoopCounter = 0
-  /// The container that store the amplitudes value of each frame until we filled enough for 5 seconds data
-  /// to calculate the respiratory rate.
-  var accumulatedAmplitudes = [Float](repeating: 0, count: amplitudesPerSec * 5)
-  
   /*
    The main parts of the capture architecture are sessions, inputs, and outputs:
    Capture sessions connect one or more inputs to one or more outputs. Inputs are sources of media,
@@ -79,11 +71,8 @@ public class BreathObsever: NSObject, ObservableObject {
     autoreleaseFrequency: .workItem
   )
   
+  /// The window time that we store the data to calculate the respiratory rate
   public static let windowTime = 5
-  
-  /// samples limit at the point where we reach this limit, we apply the respiratory rate calculation
-  /// (each 5 seconds)
-  public static let samplesLimit = sampleRate * Double(windowTime)
   
   public override init() { 
     super.init()
@@ -102,11 +91,8 @@ public class BreathObsever: NSObject, ObservableObject {
   /// The subject that recieves the latest data of audio amplitude
   public var amplitudeSubject = PassthroughSubject<Float, Never>()
   
-  /// The sujbect that recieves the latest data of audio power in decibel
-  public var powerSubject = PassthroughSubject<Float, Never>()
-  
   /// The subject that recieves the latest data of calculated respiratory rate
-  public var respiratoryRate = CurrentValueSubject<Float, Error>(0.0)
+  public var respiratoryRate = PassthroughSubject<UInt8?, Never>()
   
 }
 
@@ -139,6 +125,7 @@ extension BreathObsever {
     let outputPipe = Pipe()
     
     process.standardOutput = outputPipe
+    
     do {
       try process.run()
       if let outputData = try outputPipe.fileHandleForReading.readToEnd() {
@@ -146,11 +133,19 @@ extension BreathObsever {
         let output = String(decoding: outputData, as: UTF8.self)
           .replacingOccurrences(of: "\n", with: "")
         
-        DispatchQueue.main.async {
-          // TODO: put this into current value of respiratory rate
-          // TODO: at the time of call this function, send a nil value to passthrough subject, temporary put that into dataStorage array. When the actual output returned, send that value to passthrough subject again. So when revieved, if the value not nil and there is the nil value stand at the last of the array in dataStorage, replace it with that non-nil value. Otherwise, just append as normal
+        DispatchQueue.main.async { [weak self] in
           // TODO: check the doc of the lowest and highest RR so set the output inside that boundary only.
-          print(output)
+          guard let self, let value = UInt8(output) else {
+            return
+          }
+          var rr = value / 2
+          
+          /// The threshold boundary of normal respiratoyr rate is from 12 to 25 per sec
+          /// so we  set the rr to the threshold if it lower or higher the boudaries.
+          rr = rr < 12 ? 12 : rr
+          rr = rr > 25 ? 25 : rr
+          
+          respiratoryRate.send(rr)
         }
       }
     } catch {

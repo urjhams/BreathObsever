@@ -42,8 +42,8 @@ frequencyArray, psd = signal.welch(downSampled2, 10, nperseg = 50)
 peaks, _ = signal.find_peaks(psd)
 
 # the highest peak represent the respiratory rate
-respiratoryRate = peaks.max()
+respiratoryRatePeak = peaks.max()
 
-command = f'echo {respiratoryRate}'
+command = f'echo {respiratoryRatePeak}'
 
 os.system(command)
