@@ -48,9 +48,6 @@ public class BreathObsever: NSObject, ObservableObject {
   /// A buffer that contains the raw audio data from AVFoundation that used to calculate the respiratory rate
   var rawAudioData = [Int16]()
   
-  /// A buffer that contains the raw audio data from AVFoundation that used to present the amplitude
-  var rawBufferAudioData = [Int16]()
-  
   /// A reusable array that contains the current frame of time-domain audio data as single-precision
   /// values.
   var timeDomainBuffer = [Float](repeating: 0, count: samples)
