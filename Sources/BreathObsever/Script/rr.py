@@ -15,13 +15,24 @@ def findPeakIndex(array):
 samples = sys.argv[1].split(',')
 
 ## Downsample to 20 Hz
-downsampled_smoothed_envelope = resample(samples, 100)
+downSampled = resample(samples, 100)
 
 # Find power spectral density using Welch periodogram
-frequencies, psd = welch(downsampled_smoothed_envelope, fs=10, nperseg=len(downsampled_smoothed_envelope))
+frequencies, psd = welch(downSampled, fs=10, nperseg=len(downSampled))
 
-for index in range(0, len(frequencies) - 1):
-    print(f'{frequencies[index]} - {psd[index]}')
+f = ''
+for frequency in frequencies:
+    f += f'{frequency},'
+
+print(f'{f}')
+
+p = ''
+for ps in psd:
+    p += f'{ps},'
+print(f'{p}')
+
+# for index in range(0, len(frequencies) - 1):
+#     print(f'{frequencies[index]} - {psd[index]}')
 
 peak = findPeakIndex(psd)
 
