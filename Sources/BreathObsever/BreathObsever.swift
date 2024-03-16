@@ -3,7 +3,8 @@ import SwiftUI
 import Combine
 import Accelerate
 
-public class BreathObsever: NSObject, ObservableObject {
+@Observable
+public class BreathObsever: NSObject {
   
   public enum ObserverError: Error {
     case noMicrophoneAccess
