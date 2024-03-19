@@ -103,8 +103,11 @@ public class BreathObsever: NSObject {
   public var amplitudeSubject = PassthroughSubject<Float, Never>()
   
   /// The subject that recieves the latest data of calculated respiratory rate
-  public var respiratoryRate = PassthroughSubject<UInt8?, Never>()
+  internal var _respiratoryRate = PassthroughSubject<UInt8?, Never>()
   
+  public var respiratoryRate: AnyPublisher<UInt8?, Never> {
+    _respiratoryRate.receive(on: DispatchQueue.main).eraseToAnyPublisher()
+  }
 }
 
 extension BreathObsever {
@@ -144,27 +147,20 @@ extension BreathObsever {
         let output = String(decoding: outputData, as: UTF8.self)
           .replacingOccurrences(of: "\n", with: "")
         
-        DispatchQueue.main.async { [weak self] in
-                              
-          guard let self, let frequency = Double(output) else {
-            return
-          }
-          
-          var rr = Int(60 * frequency)
-          
-//          rr = rr < 12 ? 12 : rr
-          
-          rr = rr > 24 ? 24 : rr
-          
-          print(rr)
-//
-//          var rr = UInt8(1 / frequency)
-//          
-//          rr = rr < 12 ? 12 : rr
-//          rr = rr > 25 ? 25 : rr
-          
-//          respiratoryRate.send(rr)
+        guard let frequency = Double(output) else {
+          return
         }
+        
+        /// respiratory rate = 60 * peak frequency value
+        var rr = Int(60 * frequency)
+        
+        /// normal breathing should be in range of 12 to 24 breaths per min.
+        /// Our theory here want to focus on the respiratory rate will be low,
+        /// even lower than the normal minimum respiratory rate while in
+        /// high cognitive load
+        rr = rr > 24 ? 24 : rr
+        
+        _respiratoryRate.send(UInt8(rr))
       }
     } catch {
       print(error.localizedDescription)

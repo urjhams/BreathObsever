@@ -49,7 +49,7 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
       processData(values: dataToProcess)
     }
     
-    let amplitude = timeDomainBuffer.reduce(0.0) { max($0, abs($1)) } // vDSP.rootMeanSquare(timeDomainBuffer)
+    let amplitude = timeDomainBuffer.reduce(0.0) { max($0, abs($1)) }
     
     processingBuffer[counter] = amplitude
     
@@ -58,16 +58,15 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
     if counter == Self.processingSamples {
       counter = 0
       // apply Hanning window to smoothing the data
-//      print("🙆🏻🙆🏻🙆🏻 \(processingBuffer)")
       vDSP.multiply(processingBuffer, processingHanningWindow, result: &processingBuffer)
-//      print("🙆🏻🙆🏻🙆🏻🙆🏻 \(processingBuffer)")
       
       // downsample to half
       let filter = [Float](repeating: 1, count: 1)
       let downsampled = vDSP.downsample(processingBuffer, decimationFactor: 2, filter: filter)
       
-      print("🙆🏻🙆🏻🙆🏻🙆🏻🙆🏻 \(downsampled)")
-      
+      // send the replacement for the respiratory rate to the storage
+      _respiratoryRate.send(nil)
+            
       DispatchQueue.global(qos: .utility).async { [weak self] in
         guard let self else {
           return

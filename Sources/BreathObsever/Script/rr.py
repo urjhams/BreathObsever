@@ -18,21 +18,9 @@ samples = sys.argv[1].split(',')
 downSampled = resample(samples, 100)
 
 # Find power spectral density using Welch periodogram
+# Note that we use the frequency at 10 Hz while the data represented as 20 Hz
+# to get the higher resolution of result.
 frequencies, psd = welch(downSampled, fs=10, nperseg=len(downSampled))
-
-f = ''
-for frequency in frequencies:
-    f += f'{frequency},'
-
-print(f'{f}')
-
-p = ''
-for ps in psd:
-    p += f'{ps},'
-print(f'{p}')
-
-# for index in range(0, len(frequencies) - 1):
-#     print(f'{frequencies[index]} - {psd[index]}')
 
 peak = findPeakIndex(psd)
 
