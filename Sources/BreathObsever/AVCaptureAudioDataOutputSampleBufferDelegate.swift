@@ -68,7 +68,7 @@ extension BreathObsever: AVCaptureAudioDataOutputSampleBufferDelegate {
       
       print("🙆🏻🙆🏻🙆🏻🙆🏻🙆🏻 \(downsampled)")
       
-      DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+      DispatchQueue.global(qos: .utility).async { [weak self] in
         guard let self else {
           return
         }
