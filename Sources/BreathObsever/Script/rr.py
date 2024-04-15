@@ -1,7 +1,6 @@
 import os
 import sys
-from scipy.signal import resample, hilbert, butter, filtfilt, welch
-import numpy as np
+from scipy.signal import resample, welch
 
 def findPeakIndex(array):
     peakIndex = 0
